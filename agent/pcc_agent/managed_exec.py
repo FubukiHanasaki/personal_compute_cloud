@@ -1,4 +1,4 @@
-"""Apply a Torch allocator budget before approved ComfyUI startup. Fubuki."""
+"""Apply a Torch allocator budget before approved ComfyUI startup. FubukiHanasaki."""
 
 import os
 import runpy

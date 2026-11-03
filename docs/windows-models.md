@@ -1,6 +1,6 @@
 # Windows Ollama / ComfyUI
 
-作者：Fubuki。日期：2026-11-03（Asia/Shanghai）。
+作者：FubukiHanasaki。日期：2026-11-03（Asia/Shanghai）。
 
 Windows 节点已接入受管 Ollama Chat 与 ComfyUI 图片模型的同一套注册、能力发现、服务预热、按需推理、空闲卸载、取消和停止核对流程。Server API/模板结构与 Linux 保持一致，无需另一套控制面。支持 CPU 或显式选择的一张 NVIDIA CUDA GPU；AMD/Vulkan 适配不在本轮实现范围，避免使用未受当前资源报告覆盖的设备。
 

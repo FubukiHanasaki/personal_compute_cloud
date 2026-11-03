@@ -135,7 +135,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
             <span>本地优先</span>
           </div>
         </div>
-        <small>Personal Compute Cloud · Fubuki</small>
+        <small>Personal Compute Cloud · FubukiHanasaki</small>
       </section>
       <main className="login-main">
         <form onSubmit={submit}>
@@ -344,7 +344,7 @@ function App() {
             ↗
           </button>
         </div>
-        <div className="signature">DESIGNED & BUILT BY Fubuki</div>
+        <div className="signature">DESIGNED & BUILT BY FubukiHanasaki</div>
       </aside>
       <div className="main-wrap">
         <header className="topbar">
@@ -715,7 +715,7 @@ function App() {
           {view === "audit" && <Audit />}
         </main>
         <footer>
-          Personal Compute Cloud <span>Fubuki · v0.1.0</span>
+          Personal Compute Cloud <span>FubukiHanasaki · v0.1.0</span>
         </footer>
       </div>
       {selected && (

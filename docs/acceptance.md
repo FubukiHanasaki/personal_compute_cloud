@@ -1,6 +1,6 @@
 # 验收矩阵
 
-作者：Fubuki。记录日期：2026-11-03（Asia/Shanghai）。本次为本地开发交付，尚不宣布所有 MVP 验收场景完成。
+作者：FubukiHanasaki。记录日期：2026-11-03（Asia/Shanghai）。本次为本地开发交付，尚不宣布所有 MVP 验收场景完成。
 
 以下实测数字保留历史提交的结果。后续 Windows Ollama/ComfyUI 已实现独立 Job 进程管理，当前新增检查范围见 [Windows 模型支持](windows-models.md)；不将未运行的 Windows 原生/真实模型测试计为通过。
 

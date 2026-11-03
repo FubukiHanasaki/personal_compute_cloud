@@ -1,4 +1,4 @@
-# Author: Fubuki. Run as a dedicated standard Windows user from the checkout.
+# Author: FubukiHanasaki. Run as a dedicated standard Windows user from the checkout.
 $ErrorActionPreference = 'Stop'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Use a standard non-administrator account' }

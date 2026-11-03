@@ -1,4 +1,4 @@
-"""Model process platform contracts, without Windows or model execution. Fubuki."""
+"""Model process platform contracts, without Windows or model execution. FubukiHanasaki."""
 
 import ctypes as C
 import os

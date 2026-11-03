@@ -27,7 +27,7 @@ def bootstrap_owner(db, settings):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PCC Server · Fubuki")
+    parser = argparse.ArgumentParser(description="PCC Server · FubukiHanasaki")
     parser.add_argument(
         "command",
         nargs="?",

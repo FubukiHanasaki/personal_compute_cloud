@@ -1,4 +1,4 @@
-"""Reproducible local setup; transient files stay in tmp. Author: Fubuki."""
+"""Reproducible local setup; transient files stay in tmp. Author: FubukiHanasaki."""
 
 import argparse
 import os
@@ -13,7 +13,7 @@ TMP = ROOT / "tmp"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PCC development · Fubuki")
+    parser = argparse.ArgumentParser(description="PCC development · FubukiHanasaki")
     parser.add_argument(
         "command", choices=["setup", "init-dev", "serve", "test", "build", "migrate"]
     )

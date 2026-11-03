@@ -1,4 +1,4 @@
-// Author: Fubuki
+// Author: FubukiHanasaki
 import { useEffect, useState } from "react";
 import type { Node } from "./api";
 

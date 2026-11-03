@@ -1,6 +1,6 @@
 # Windows 与服务端逻辑检查
 
-作者：Fubuki。日期：2026-11-03（Asia/Shanghai）。
+作者：FubukiHanasaki。日期：2026-11-03（Asia/Shanghai）。
 
 按本轮要求，仅进行源码逻辑审查与静态检查。没有启动 Server、数据库、Agent、Windows Worker 或模型，没有执行 pytest、接口调用、部署演练或浏览器校验。以下结论不能替代 Windows 实机、Docker 生产部署或此前跳过的视觉验收。
 

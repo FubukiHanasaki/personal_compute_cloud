@@ -1,6 +1,6 @@
 # 实施记录
 
-作者：Fubuki。需求基线：spec-v0.4.md。所有阶段依序实施；未实测项目不得表述为验收通过。
+作者：FubukiHanasaki。需求基线：spec-v0.4.md。所有阶段依序实施；未实测项目不得表述为验收通过。
 
 | 阶段 | 修改计划与文件 | 测试计划 |
 |---|---|---|
@@ -16,7 +16,7 @@
 
 节点凭证与用户密钥独立；任务只运行登记且可验证隔离的模板；本地/云端策略取交集。生产只接受 PostgreSQL 与安全 cookie。Agent 仅出站 HTTPS，默认本地维护模式，配置能力不足则拒绝。数据库租约过期进入 reconciling，只有确认旧进程已退出才能重试。首个受控计算模板只处理有界数字输入；测试模型必须显式启用并标明 synthetic，不代表真实 GPU 验收。
 
-Git 署名、文档作者及产品署名：Fubuki。临时文件统一 tmp/，禁止提交实际凭证和运行数据。
+Git 署名、文档作者及产品署名：FubukiHanasaki。临时文件统一 tmp/，禁止提交实际凭证和运行数据。
 
 ## P0 结果
 
@@ -52,7 +52,7 @@ P4 提交时本机尚无模型与运行时，硬件标志未达到。P6 已在 t
 
 React/TypeScript 中文响应式 UI 已连接真实 API：安全登录、任务工作台/分页/日志/取消/结果下载、Chat SSE、图片异步提交与历史、节点指标/云端共享模式/一次性令牌/独立中止/吊销、模型服务启停、用户授权/API Key/模板登记/审计。没有硬编码节点和模型数据。空状态从 API 返回，未配置时禁止相应提交。
 
-TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过。当前 CUA 浏览器清单为空，浏览器点击和移动端实机 QA 尚无证据。运行：npm run build --prefix web 后启动 pcc-server，访问根路径。页面作者署名 Fubuki。
+TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过。当前 CUA 浏览器清单为空，浏览器点击和移动端实机 QA 尚无证据。运行：npm run build --prefix web 后启动 pcc-server，访问根路径。页面作者署名 FubukiHanasaki。
 
 
 ## P6 开发版加固结果
@@ -68,7 +68,7 @@ TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过�
 
 真实 Ollama 0.40.14 / smollm2:135m GPU 生命周期已实测；原生显存 381,828,463 bytes，完整证据保存于 docs/evidence/gpu-lifecycle.json，仅证明推理链路，不评价生成质量。没有真实 GPU 的 CI 不伪造此证据。
 
-运行：`python3 scripts/dev.py setup / init-dev / migrate / build / serve` 按 README 顺序；生产用 `.env.example` 和 Docker Compose。临时运行时、权重、数据库、缓存、虚拟环境和构建产物全部留在忽略的 tmp/。Git 采用 P0–P6 分阶段提交，作者 Fubuki，开发版标签 v0.1.0-dev。
+运行：`python3 scripts/dev.py setup / init-dev / migrate / build / serve` 按 README 顺序；生产用 `.env.example` 和 Docker Compose。临时运行时、权重、数据库、缓存、虚拟环境和构建产物全部留在忽略的 tmp/。Git 采用 P0–P6 分阶段提交，作者 FubukiHanasaki，开发版标签 v0.1.0-dev。
 
 **尚未完成发布验收：** Windows 实机接入/等价受限执行器、ComfyUI 真实图片权重、Docker/Caddy 真机 HTTPS 与重启持久性、备份恢复演练、浏览器及移动端交互验证。当前是可运行开发版，不宣称 A01–A14 全通过。架构未引入额外队列、微服务或硬件型号调度分支。
 

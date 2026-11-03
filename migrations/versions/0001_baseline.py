@@ -1,4 +1,4 @@
-"""P0 schema baseline. Author: Fubuki."""
+"""P0 schema baseline. Author: FubukiHanasaki."""
 
 revision = "0001"
 down_revision = None

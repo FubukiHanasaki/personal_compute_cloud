@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Author: Fubuki. Execute from the project checkout on the deployment host.
+# Author: FubukiHanasaki. Execute from the project checkout on the deployment host.
 set -eu
 umask 077
 backup_dir=${1:-tmp/backups/$(date +%Y%m%d-%H%M%S)}
@@ -17,6 +17,6 @@ docker compose run --rm --no-deps -T --entrypoint python server -m pcc_server.ba
 dump_hash=$(sha256sum "$backup_dir/pcc.dump" | cut -d ' ' -f 1)
 artifact_hash=$(sha256sum "$backup_dir/artifacts.tar.gz" | cut -d ' ' -f 1)
 printf '%s  pcc.dump\n%s  artifacts.tar.gz\n' "$dump_hash" "$artifact_hash" > "$backup_dir/SHA256SUMS"
-printf '{"version":1,"author":"Fubuki","files":{"pcc.dump":"%s","artifacts.tar.gz":"%s"}}\n' "$dump_hash" "$artifact_hash" > "$backup_dir/manifest.json"
+printf '{"version":1,"author":"FubukiHanasaki","files":{"pcc.dump":"%s","artifacts.tar.gz":"%s"}}\n' "$dump_hash" "$artifact_hash" > "$backup_dir/manifest.json"
 rm "$backup_dir/.incomplete"
 printf '%s\n' 'Backup complete. Encrypt .env separately; preserve PCC_SECRET when restoring.'

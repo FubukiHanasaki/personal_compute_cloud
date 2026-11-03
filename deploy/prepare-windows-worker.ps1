@@ -1,4 +1,4 @@
-# Dedicated, vendor-verified embeddable runtime. Author: Fubuki.
+# Dedicated, vendor-verified embeddable runtime. Author: FubukiHanasaki.
 param([string]$Destination = 'tmp\windows-worker-runtime')
 $ErrorActionPreference = 'Stop'
 $zip = 'tmp\python-3.13.16-embed-amd64.zip'

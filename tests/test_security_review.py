@@ -1,4 +1,4 @@
-"""Security regressions prepared for later execution. Author: Fubuki."""
+"""Security regressions prepared for later execution. Author: FubukiHanasaki."""
 
 import asyncio
 from types import SimpleNamespace

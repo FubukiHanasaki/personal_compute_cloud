@@ -1,4 +1,4 @@
-"""HTTPS identity/queue persistence against an isolated Compose deployment. Fubuki."""
+"""HTTPS identity/queue persistence against an isolated Compose deployment. FubukiHanasaki."""
 
 import argparse
 import http.cookiejar

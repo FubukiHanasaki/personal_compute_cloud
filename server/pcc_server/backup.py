@@ -1,4 +1,4 @@
-"""Portable, verified database/artifact snapshots. Author: Fubuki."""
+"""Portable, verified database/artifact snapshots. Author: FubukiHanasaki."""
 
 import argparse
 import hashlib
@@ -134,7 +134,7 @@ def create(destination, storage_root, database_url, pg_dump="pg_dump", quiesced=
         validate_archive(staging / "artifacts.tar.gz")
         manifest = {
             "version": 1,
-            "author": "Fubuki",
+            "author": "FubukiHanasaki",
             "created_at": time.time(),
             "files": {
                 name: sha256(staging / name)
@@ -233,7 +233,7 @@ def restore(
 def main():
     import sys
 
-    parser = argparse.ArgumentParser(description="PCC verified backups · Fubuki")
+    parser = argparse.ArgumentParser(description="PCC verified backups · FubukiHanasaki")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("create", "restore"):
         command = commands.add_parser(name)

@@ -1,4 +1,4 @@
-"""Bound JSON requests before parsing. Author: Fubuki."""
+"""Bound JSON requests before parsing. Author: FubukiHanasaki."""
 
 import uuid
 from starlette.responses import JSONResponse

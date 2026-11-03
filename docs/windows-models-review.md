@@ -1,6 +1,6 @@
 # Windows Ollama / ComfyUI 逻辑与安全复查
 
-作者：Fubuki。日期：2026-11-03（Asia/Shanghai）。
+作者：FubukiHanasaki。日期：2026-11-03（Asia/Shanghai）。
 
 对照 V0.4 的受批模板、本地策略优先、资源上限、模型生命周期、活动请求保护、独立租约守卫和停止核对要求，复查 Windows 模型适配、共用生命周期、配置、任务执行和恢复入口。此前用户已跳过视觉验收，本轮不启动真实模型、Server、GPU 或 Windows 进程。
 

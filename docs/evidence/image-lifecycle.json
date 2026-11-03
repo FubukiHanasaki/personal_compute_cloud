@@ -1,5 +1,5 @@
 {
-  "author": "Fubuki",
+  "author": "FubukiHanasaki",
   "date": "2026-11-03",
   "timezone": "Asia/Shanghai",
   "environment": "Ubuntu 26.04.1 LTS, Python 3.13.16",
@@ -25,7 +25,7 @@
     "cuda_context_headroom_mb": 256
   },
   "direct_lifecycle": {
-    "author": "Fubuki",
+    "author": "FubukiHanasaki",
     "model": "sd15-validation",
     "synthetic": false,
     "size": "256x256",
@@ -35,7 +35,7 @@
     "idle_unloaded_and_process_stopped": true
   },
   "https_job": {
-    "author": "Fubuki",
+    "author": "FubukiHanasaki",
     "synthetic": false,
     "protocol": "HTTPS with verified private test CA",
     "scoped_user_key": true,

@@ -1,4 +1,4 @@
-"""Restore drills and malicious archive rejection. Author: Fubuki."""
+"""Restore drills and malicious archive rejection. Author: FubukiHanasaki."""
 
 import base64
 import hashlib

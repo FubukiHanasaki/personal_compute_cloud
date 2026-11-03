@@ -1,4 +1,4 @@
-"""Regression cases prepared during static review; Author: Fubuki."""
+"""Regression cases prepared during static review; Author: FubukiHanasaki."""
 
 import time
 from types import SimpleNamespace

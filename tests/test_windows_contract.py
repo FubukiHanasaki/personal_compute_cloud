@@ -1,4 +1,4 @@
-"""Platform-independent validation of the Windows adapter contract. Fubuki."""
+"""Platform-independent validation of the Windows adapter contract. FubukiHanasaki."""
 
 import ctypes
 import pytest

@@ -1,6 +1,6 @@
 # 依赖与升级策略
 
-作者：Fubuki。精确 Python 版本和下载哈希在 uv.lock，前端版本及完整依赖树在 web/package-lock.json。开发临时运行时和工具不打入 Git，不作为平台依赖。
+作者：FubukiHanasaki。精确 Python 版本和下载哈希在 uv.lock，前端版本及完整依赖树在 web/package-lock.json。开发临时运行时和工具不打入 Git，不作为平台依赖。
 
 | 组件 | 固定范围 / 本次锁定 | 许可 |
 |---|---|---|

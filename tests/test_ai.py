@@ -11,7 +11,7 @@ from test_jobs import claim
 
 
 def test_model_and_template_pagination_applies_after_authorization(env):
-    """Selectors must reach later pages without leaking private models. Fubuki."""
+    """Selectors must reach later pages without leaking private models. FubukiHanasaki."""
     from fastapi.testclient import TestClient
     from test_auth import login
 

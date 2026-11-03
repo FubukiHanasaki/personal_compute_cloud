@@ -1,4 +1,4 @@
-"""Owned Windows model processes, atomically attached to bounded Jobs. Fubuki.
+"""Owned Windows model processes, atomically attached to bounded Jobs. FubukiHanasaki.
 
 Approved model runtimes run under the standard Agent account. This is resource
 and process-tree containment, not the AppContainer used for compute templates.

@@ -1,4 +1,4 @@
-"""Managed inference lifecycle. No user-supplied executables. Author: Fubuki."""
+"""Managed inference lifecycle. No user-supplied executables. Author: FubukiHanasaki."""
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field

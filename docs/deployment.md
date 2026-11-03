@@ -1,6 +1,6 @@
 # 部署、备份与恢复
 
-作者：Fubuki。
+作者：FubukiHanasaki。
 
 ## 生产前提
 

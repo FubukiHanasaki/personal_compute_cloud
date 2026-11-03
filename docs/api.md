@@ -1,6 +1,6 @@
 # API 使用
 
-作者：Fubuki。生产统一 HTTPS；浏览器使用 HttpOnly 会话 + CSRF，程序使用作用域 Bearer API Key。节点凭证与用户密钥独立，禁止互换。
+作者：FubukiHanasaki。生产统一 HTTPS；浏览器使用 HttpOnly 会话 + CSRF，程序使用作用域 Bearer API Key。节点凭证与用户密钥独立，禁止互换。
 
 ## 提交并下载结果
 

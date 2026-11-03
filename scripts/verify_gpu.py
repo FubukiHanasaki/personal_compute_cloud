@@ -1,4 +1,4 @@
-"""Explicit real-GPU lifecycle check; never part of ordinary CI. Author: Fubuki."""
+"""Explicit real-GPU lifecycle check; never part of ordinary CI. Author: FubukiHanasaki."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from pcc_agent.services import ServiceManager
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PCC real GPU acceptance · Fubuki")
+    parser = argparse.ArgumentParser(description="PCC real GPU acceptance · FubukiHanasaki")
     parser.add_argument("--config", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--output", default="tmp/gpu-evidence.json")
@@ -58,7 +58,7 @@ def main():
         manager.tick()
         assert service.state == "stopped" and backend.process.poll() is not None
         evidence = {
-            "author": "Fubuki",
+            "author": "FubukiHanasaki",
             "model": args.model,
             "size_vram_bytes": gpu_bytes,
             "content": result["result"]["content"],

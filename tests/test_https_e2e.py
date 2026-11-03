@@ -1,4 +1,4 @@
-"""Verified TLS proxy -> Server -> outbound Agent -> artifact. Author: Fubuki."""
+"""Verified TLS proxy -> Server -> outbound Agent -> artifact. Author: FubukiHanasaki."""
 
 import json
 import os

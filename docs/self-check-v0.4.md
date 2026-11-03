@@ -1,6 +1,6 @@
 # V0.4 对照自检记录
 
-作者：Fubuki。日期：2026-11-03，Asia/Shanghai。环境：Ubuntu 26.04.1 LTS，Python 3.13.16、Node.js 22.16.0、PostgreSQL 18.6。
+作者：FubukiHanasaki。日期：2026-11-03，Asia/Shanghai。环境：Ubuntu 26.04.1 LTS，Python 3.13.16、Node.js 22.16.0、PostgreSQL 18.6。
 
 这是前一轮自检的历史快照。后续实现与验收状态以 [补齐记录](completion-v0.4.md)和[最新验收矩阵](acceptance.md)为准。
 

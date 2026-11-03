@@ -2,7 +2,7 @@
 
 将自己的 Windows / Linux 设备接入统一控制面，通过网页和 HTTPS API 使用经批准的计算任务、Ollama 对话模型与 ComfyUI 图片工作流。
 
-作者：**Fubuki** · 许可证：[MIT](LICENSE) · 当前状态：开发版 · 需求基线：[V0.4](docs/spec-v0.4.md)
+作者：**FubukiHanasaki** · 许可证：[MIT](LICENSE) · 当前状态：开发版 · 需求基线：[V0.4](docs/spec-v0.4.md)
 
 项目已提供控制面、出站 Agent、中文管理台和用户 Portal。Windows 模型支持已完成逻辑、安全及模拟检查；Windows 原生执行、生产 Docker 部署与 Portal 视觉验收仍待完成，具体证据见[当前验证状态](#当前验证状态)。
 
@@ -212,4 +212,4 @@ tmp/               本地临时文件与运行数据（Git 忽略）
 - [需求基线 V0.4](docs/spec-v0.4.md) · [阶段实施](docs/implementation.md) · [变更记录](CHANGELOG.md)
 - [依赖、许可与升级策略](docs/dependencies.md)
 
-MIT License · Copyright © 2026 Fubuki
+MIT License · Copyright © 2026 FubukiHanasaki

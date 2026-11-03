@@ -1,6 +1,6 @@
 # V0.4 后续实现与核验
 
-作者：Fubuki。日期：2026-11-03（Asia/Shanghai）。
+作者：FubukiHanasaki。日期：2026-11-03（Asia/Shanghai）。
 
 后续 Windows/Server 逻辑审查及修复见 [逻辑检查记录](logic-review-v0.4.md)。该轮按要求未做运行时测试；本文通过数为此前提交的历史结果，不代表后续修改已经实测通过。
 

@@ -1,4 +1,4 @@
-"""Execution errors that must retain the recovery journal. Author: Fubuki."""
+"""Execution errors that must retain the recovery journal. Author: FubukiHanasaki."""
 
 
 class WorkerStopUnconfirmed(RuntimeError):

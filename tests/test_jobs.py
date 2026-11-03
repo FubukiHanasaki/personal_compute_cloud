@@ -48,7 +48,7 @@ def lease(payload):
 
 
 def test_history_type_filter_precedes_pagination_and_preserves_ownership(env):
-    """Old image history remains reachable after newer compute jobs. Author: Fubuki."""
+    """Old image history remains reachable after newer compute jobs. Author: FubukiHanasaki."""
     from fastapi.testclient import TestClient
     from test_auth import login
 

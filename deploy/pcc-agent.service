@@ -1,4 +1,4 @@
-# Author: Fubuki. Replace checkout paths before installing with systemctl --user.
+# Author: FubukiHanasaki. Replace checkout paths before installing with systemctl --user.
 [Unit]
 Description=Personal Compute Cloud Agent
 After=network-online.target

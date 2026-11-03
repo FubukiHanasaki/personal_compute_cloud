@@ -1,4 +1,4 @@
-"""Identity and outbound node registration. Author: Fubuki."""
+"""Identity and outbound node registration. Author: FubukiHanasaki."""
 
 from alembic import op
 import sqlalchemy as sa

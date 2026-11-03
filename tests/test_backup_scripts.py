@@ -1,4 +1,4 @@
-"""Compose wrapper failure ordering; real DB restore is tested separately. Fubuki."""
+"""Compose wrapper failure ordering; real DB restore is tested separately. FubukiHanasaki."""
 
 import hashlib
 import io

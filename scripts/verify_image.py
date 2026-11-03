@@ -1,4 +1,4 @@
-"""Explicit real-model image/GPU lifecycle verification. Author: Fubuki."""
+"""Explicit real-model image/GPU lifecycle verification. Author: FubukiHanasaki."""
 
 import argparse
 import base64
@@ -11,7 +11,7 @@ from pcc_agent.services import ServiceManager
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PCC real image acceptance · Fubuki")
+    parser = argparse.ArgumentParser(description="PCC real image acceptance · FubukiHanasaki")
     parser.add_argument("--config", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--output", default="tmp/image-evidence.json")
@@ -72,7 +72,7 @@ def main():
         manager.tick()
         assert service.state == "stopped" and backend.process.poll() is not None
         evidence = {
-            "author": "Fubuki",
+            "author": "FubukiHanasaki",
             "model": args.model,
             "synthetic": False,
             "size": "256x256",

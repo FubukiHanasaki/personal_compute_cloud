@@ -1,4 +1,4 @@
-# Author: Fubuki. Copy to agent.toml and replace all local paths/model IDs.
+# Author: FubukiHanasaki. Copy to agent.toml and replace all local paths/model IDs.
 version = 1
 server = "https://compute.example.com"
 name = "windows-model-node"

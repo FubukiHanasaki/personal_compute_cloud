@@ -1,4 +1,4 @@
-"""Apply OS limits before exec; only invoked by the local Agent. Fubuki."""
+"""Apply OS limits before exec; only invoked by the local Agent. FubukiHanasaki."""
 
 import math
 import os

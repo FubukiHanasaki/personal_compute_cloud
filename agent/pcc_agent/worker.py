@@ -1,4 +1,4 @@
-"""Closed, audited templates; no eval, imports or commands from input. Fubuki."""
+"""Closed, audited templates; no eval, imports or commands from input. FubukiHanasaki."""
 
 import base64
 import json

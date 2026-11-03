@@ -152,7 +152,7 @@ def create_app(settings=None):
             for method, operation in methods.items()
         )
         return (
-            '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PCC API · Fubuki</title><style>body{font:14px system-ui;max-width:1000px;margin:40px auto;padding:20px;line-height:1.8}td{padding:8px 16px;border-bottom:1px solid #ddd}code{font-size:12px}</style><h1>PCC API</h1><p>作者：Fubuki · 完整请求/响应 Schema：<a href="/openapi.json">OpenAPI JSON</a>。程序使用 Bearer API Key；网页登录会话的写入请求需要 CSRF。</p><table>'
+            '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PCC API · FubukiHanasaki</title><style>body{font:14px system-ui;max-width:1000px;margin:40px auto;padding:20px;line-height:1.8}td{padding:8px 16px;border-bottom:1px solid #ddd}code{font-size:12px}</style><h1>PCC API</h1><p>作者：FubukiHanasaki · 完整请求/响应 Schema：<a href="/openapi.json">OpenAPI JSON</a>。程序使用 Bearer API Key；网页登录会话的写入请求需要 CSRF。</p><table>'
             + rows
             + "</table></html>"
         )

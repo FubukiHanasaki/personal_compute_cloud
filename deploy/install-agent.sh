@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Author: Fubuki. Run as the restricted runtime user, from the source checkout.
+# Author: FubukiHanasaki. Run as the restricted runtime user, from the source checkout.
 set -eu
 if [ "$(id -u)" = 0 ]; then echo 'Use a dedicated non-root account.' >&2; exit 1; fi
 mkdir -p tmp

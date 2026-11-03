@@ -1,4 +1,4 @@
-"""Storage boundary: server-selected opaque keys only. Author: Fubuki."""
+"""Storage boundary: server-selected opaque keys only. Author: FubukiHanasaki."""
 
 from pathlib import Path
 from typing import Protocol

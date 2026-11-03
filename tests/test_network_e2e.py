@@ -1,4 +1,4 @@
-"""Real HTTP control plane + real Agent + isolated process. Author: Fubuki."""
+"""Real HTTP control plane + real Agent + isolated process. Author: FubukiHanasaki."""
 
 import json
 import os

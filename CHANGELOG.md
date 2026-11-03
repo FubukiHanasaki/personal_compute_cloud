@@ -1,12 +1,12 @@
 # 变更记录
 
-作者：Fubuki。
+作者：FubukiHanasaki。
 
 ## 未发布 · Windows 模型逻辑与安全复查 · 2026-11-03
 
 修复监听 PID 复用核验、后台预热与关停竞争、停止失败清理中断、模型复用绕过收紧额度及预热负载保护；限制后端 JSON/Chat/图片响应并核对时间与取消，完整工作流结束后清理图片历史和临时输出。GPU 配置收紧为一张完整 UUID，Windows Job 内存参数防止溢出；推理执行器在停止失败时同样关闭任务入口。
 
-Ubuntu 定向模拟/契约检查 57 项通过，7 项 Windows 用例跳过；未启动真实模型、Server、GPU 或 Windows 进程。署名 Fubuki。详见 [复查记录](docs/windows-models-review.md)。
+Ubuntu 定向模拟/契约检查 57 项通过，7 项 Windows 用例跳过；未启动真实模型、Server、GPU 或 Windows 进程。署名 FubukiHanasaki。详见 [复查记录](docs/windows-models-review.md)。
 
 ## 未发布 · Windows 受管模型 · 2026-11-03
 

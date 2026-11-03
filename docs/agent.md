@@ -1,6 +1,6 @@
 # Agent 安装与运行
 
-作者：Fubuki。Python 3.12–3.14；Linux / Windows 10/11 或受支持 Windows Server。Agent 仅主动访问服务器 HTTPS，不监听入站端口，无需公网 IP 或 Tailscale。
+作者：FubukiHanasaki。Python 3.12–3.14；Linux / Windows 10/11 或受支持 Windows Server。Agent 仅主动访问服务器 HTTPS，不监听入站端口，无需公网 IP 或 Tailscale。
 
 ## Linux
 
@@ -53,7 +53,7 @@ Agent 被强制终止时，Job 的 kill-on-close 会停止 Worker，OS profile/�
 ## 配置示例
 
 ```toml
-# Author: Fubuki
+# Author: FubukiHanasaki
 version = 1
 server = "https://compute.example.com"
 # 私有 CA 可显式指定 ca_file；默认使用标准 CA 信任库，绝不关闭证书校验。

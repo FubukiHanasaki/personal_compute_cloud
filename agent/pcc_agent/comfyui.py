@@ -1,4 +1,4 @@
-"""Approved local ComfyUI workflows; no user-uploaded graphs. Author: Fubuki."""
+"""Approved local ComfyUI workflows; no user-uploaded graphs. Author: FubukiHanasaki."""
 
 import base64
 import copy

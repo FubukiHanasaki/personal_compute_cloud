@@ -1,4 +1,4 @@
-"""Native Job and model protocol checks; real models require opt-in. Fubuki."""
+"""Native Job and model protocol checks; real models require opt-in. FubukiHanasaki."""
 
 import ctypes as C
 import json

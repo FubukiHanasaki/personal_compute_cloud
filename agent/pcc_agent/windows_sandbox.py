@@ -1,4 +1,4 @@
-"""Windows AppContainer + Job Object for approved stdlib workers. Author: Fubuki.
+"""Windows AppContainer + Job Object for approved stdlib workers. Author: FubukiHanasaki.
 
 No network capabilities, no inherited application handles, one process, bounded
 memory/CPU/output and kill-on-close. A dedicated CPython embeddable runtime is

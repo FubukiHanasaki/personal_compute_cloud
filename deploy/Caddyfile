@@ -1,4 +1,4 @@
-# Author: Fubuki
+# Author: FubukiHanasaki
 {$PCC_DOMAIN} {
 	encode zstd gzip
 	request_body {

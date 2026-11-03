@@ -1,4 +1,4 @@
-"""Native Windows evidence; skips are never counted as platform acceptance. Fubuki."""
+"""Native Windows evidence; skips are never counted as platform acceptance. FubukiHanasaki."""
 
 import os
 from pathlib import Path

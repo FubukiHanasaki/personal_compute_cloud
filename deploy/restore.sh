@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Author: Fubuki. Restore only into a new deployment with empty DB/storage.
+# Author: FubukiHanasaki. Restore only into a new deployment with empty DB/storage.
 set -eu
 umask 077
 backup_dir=${1:?usage: sh deploy/restore.sh BACKUP_DIRECTORY}

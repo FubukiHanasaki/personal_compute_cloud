@@ -1,4 +1,4 @@
-// Browser transport contract regression; no browser or external network. Fubuki.
+// Browser transport contract regression; no browser or external network. FubukiHanasaki.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { listAll, streamChat, api, setCsrf } from "../tmp/web-api/api.js";

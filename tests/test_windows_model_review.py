@@ -1,4 +1,4 @@
-"""Logic/security regressions using only fake processes and mock HTTP. Fubuki."""
+"""Logic/security regressions using only fake processes and mock HTTP. FubukiHanasaki."""
 
 import json
 from pathlib import Path

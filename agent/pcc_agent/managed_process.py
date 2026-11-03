@@ -1,4 +1,4 @@
-"""Platform process-tree ownership for approved model servers. Author: Fubuki."""
+"""Platform process-tree ownership for approved model servers. Author: FubukiHanasaki."""
 
 import os
 from pathlib import Path

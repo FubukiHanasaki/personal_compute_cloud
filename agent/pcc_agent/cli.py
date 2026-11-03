@@ -11,7 +11,7 @@ from .platform import save_credential
 
 
 def main():
-    parser = argparse.ArgumentParser(description="PCC Agent · Fubuki")
+    parser = argparse.ArgumentParser(description="PCC Agent · FubukiHanasaki")
     parser.add_argument(
         "command",
         choices=["init", "register", "run", "check", "reconcile", "cleanup-windows"],
@@ -28,7 +28,7 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("x", encoding="utf-8") as file:
             file.write(
-                '# Author: Fubuki\nversion = 1\nserver = "https://compute.example.com"\nname = "my-node"\ncredential_file = "tmp/agent-credential.json"\nwork_root = "tmp/agent"\nmode = "maintenance"\nallocatable_cpu = 1\nallocatable_memory_mb = 512\nenable_compute = false\n'
+                '# Author: FubukiHanasaki\nversion = 1\nserver = "https://compute.example.com"\nname = "my-node"\ncredential_file = "tmp/agent-credential.json"\nwork_root = "tmp/agent"\nmode = "maintenance"\nallocatable_cpu = 1\nallocatable_memory_mb = 512\nenable_compute = false\n'
             )
         return
     if args.command == "run":
