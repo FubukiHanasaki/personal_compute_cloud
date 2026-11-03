@@ -100,6 +100,8 @@ Chat 请求当前在后端完成后由 Server 以 SSE 分块返回。图片提�
 
 Agent 持续重试出站连接；本地模式不会因断线被改回 Shared。执行中独立租约守卫会停止自有 Worker。领取 ID 持久化，响应丢失后复用；完成确认丢失时按原结果幂等重发。
 
+丢失领取响应后，即使租约已过期，仍能取回原 attempt 并报告未启动/已停止；过期租约不会恢复执行权限。存在 active-attempt 日志时，启动阶段不运行隔离探测 Worker，也不预热新的模型；reconcile 命令同样跳过探测。Windows 创建过程如不能确认清理完成，会保留该日志并停止 Agent，等待人工核对，不会上报 stopped=true。新模型启动前必须确认旧模型已停止。
+
 如 `tmp/agent/active-attempt.json` 遗留，Agent 停止接新任务。先查看其中记录的 PID/创建时间或 PCC scope，确认原进程和子进程终止后运行：
 
 ```bash

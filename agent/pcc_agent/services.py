@@ -287,7 +287,10 @@ class ServiceManager:
                 if any(s.active_requests for s in others):
                     raise RuntimeError("GPU resource lock is busy")
                 for other in others:
-                    self._stop(other)
+                    if not self._stop(other):
+                        raise RuntimeError(
+                            "Previous service is awaiting stop confirmation"
+                        )
                 if service.config["worker"].startswith("comfyui:"):
                     from .comfyui import ComfyUIBackend
 

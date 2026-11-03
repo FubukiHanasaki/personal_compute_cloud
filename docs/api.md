@@ -56,6 +56,8 @@ curl "$PCC_URL/v1/chat/completions" -H "Authorization: Bearer $PCC_API_KEY" \
 
 心跳报告 physical / allocatable / available 与本地策略，领取包含 claim_id（断线重试复用）与最长 20 秒的 wait_seconds。任务相关 renew/complete/fail/events/artifacts 必须附 attempt_id 与 lease_token。上传使用有界 Base64、合法文件名和 SHA256；没有长期对象存储管理员凭证。节点只能操作自己的有效 attempt。
 
+重复 claim_id 返回原 attempt；原租约已过期时也可取回其身份用于停止核对，但不能续租、上传或完成，Agent 必须先续租成功才能启动 Worker。已确认停止或终结的 claim 返回 204，客户端可清理 pending claim，再用新的领取 ID 轮询。取消意图在租约过期后保留，确认停止时进入 cancelled，不因 retryable 标志重新排队。
+
 租约过期进入 reconciling，不能直接重领。Owner 在检查原节点进程后可调用：
 
 ```json

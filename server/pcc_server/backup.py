@@ -160,7 +160,7 @@ def verify(source):
     if (source / ".incomplete").exists():
         raise ValueError("Incomplete snapshot refused")
     manifest_path = source / "manifest.json"
-    if manifest_path.is_symlink():
+    if manifest_path.is_symlink() or not manifest_path.is_file():
         raise ValueError("Manifest must be a regular file")
     if manifest_path.stat().st_size > 10000:
         raise ValueError("Manifest too large")
@@ -178,14 +178,12 @@ def verify(source):
     return manifest
 
 
-def restore(
-    source, storage_root, database_url, pg_restore="pg_restore", quiesced=False
-):
-    if not quiesced:
-        raise ValueError("Stop all Server writers and confirm quiesced before restore")
-    environment = pg_env(database_url)
-    source, storage_root = Path(source), Path(storage_root)
-    verify(source)
+def check_restore_target(storage_root, database_url):
+    """Shared preflight for native and Compose restores; never merge live data."""
+    pg_env(database_url)
+    storage_root = Path(storage_root)
+    if storage_root.is_symlink():
+        raise ValueError("Restore artifact directory must not be a symlink")
     if storage_root.exists() and any(storage_root.iterdir()):
         raise ValueError("Restore requires a new empty artifact directory")
     parsed = make_url(database_url)
@@ -201,6 +199,17 @@ def restore(
                 raise ValueError("Restore requires an empty target database")
     finally:
         engine.dispose()
+
+
+def restore(
+    source, storage_root, database_url, pg_restore="pg_restore", quiesced=False
+):
+    if not quiesced:
+        raise ValueError("Stop all Server writers and confirm quiesced before restore")
+    environment = pg_env(database_url)
+    source, storage_root = Path(source), Path(storage_root)
+    verify(source)
+    check_restore_target(storage_root, database_url)
     # Verify/extract before mutating the DB. A failed restore stays offline and
     # must be discarded/retried into a fresh target, never served as complete.
     unpack(source / "artifacts.tar.gz", storage_root)
@@ -241,6 +250,8 @@ def main():
     command.add_argument("directory", type=Path)
     command = commands.add_parser("verify-archive")
     command.add_argument("archive", type=Path)
+    command = commands.add_parser("check-restore-target")
+    command.add_argument("directory", type=Path)
     commands.add_parser("verify-stream")
     command = commands.add_parser("unpack-stream")
     command.add_argument("directory", type=Path)
@@ -257,6 +268,8 @@ def main():
         validate_archive(args.archive)
     elif args.command == "verify":
         verify(args.directory)
+    elif args.command == "check-restore-target":
+        check_restore_target(args.directory, os.environ["PCC_DATABASE_URL"])
     else:
         url = os.environ["PCC_DATABASE_URL"]
         executable = "pg_dump" if args.command == "create" else "pg_restore"

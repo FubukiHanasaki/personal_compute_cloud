@@ -118,8 +118,6 @@ def heartbeat(
         node.last_seen = time.time()
         definitions = db.scalars(select(ServiceDefinition)).all()
         for definition in definitions:
-            if definition.allowed_config["worker"] not in caps["workers"]:
-                continue
             instance = db.scalar(
                 select(ServiceInstance).where(
                     ServiceInstance.definition_id == definition.id,
@@ -127,6 +125,8 @@ def heartbeat(
                 )
             )
             if not instance:
+                if definition.allowed_config["worker"] not in caps["workers"]:
+                    continue
                 instance = ServiceInstance(definition_id=definition.id, node_id=node.id)
                 db.add(instance)
                 db.flush()
@@ -149,7 +149,10 @@ def heartbeat(
         commands = [
             {
                 "definition_id": i.definition_id,
-                "desired_state": i.desired_state,
+                "desired_state": i.desired_state
+                if db.get(ServiceDefinition, i.definition_id).allowed_config["worker"]
+                in caps["workers"]
+                else "stopped",
                 "config": db.get(ServiceDefinition, i.definition_id).allowed_config,
                 "idle_seconds": db.get(ServiceDefinition, i.definition_id).idle_policy[
                     "idle_seconds"

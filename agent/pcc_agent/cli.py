@@ -68,7 +68,7 @@ def main():
     else:
         from .runtime import Agent
 
-        agent = Agent(args.config)
+        agent = Agent(args.config, probe_isolation=args.command != "reconcile")
         if args.command == "reconcile":
             import json
             import psutil

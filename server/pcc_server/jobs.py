@@ -91,11 +91,13 @@ class Upload(Lease):
 
 
 def fingerprint(data):
-    return hashlib.sha256(
-        json.dumps(
+    try:
+        encoded = json.dumps(
             data, sort_keys=True, separators=(",", ":"), allow_nan=False
         ).encode()
-    ).hexdigest()
+    except (TypeError, ValueError, OverflowError):
+        raise HTTPException(422, "请求必须包含合法且有限的 JSON 数据") from None
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def view(job):
@@ -209,7 +211,10 @@ def sweep(db, settings):
     ):
         job = db.get(Job, attempt.job_id)
         if job.current_attempt_id == attempt.id and job.status not in TERMINAL:
-            job.status = "reconciling"
+            # Cancellation is durable even when its acknowledgement is lost.
+            # The attempt still fences capacity until stop confirmation arrives.
+            if job.status != "cancel_requested":
+                job.status = "reconciling"
             job.error = "执行租约过期，等待节点确认原执行已停止"
             job.updated_at = now
             attempt.status = "reconciling"
@@ -387,12 +392,11 @@ def claim_once(body, node, db, settings):
         )
         if previous:
             job = db.get(Job, previous.job_id)
-            if (
-                previous.status != "active"
-                or previous.lease_expires_at <= time.time()
-                or job.status == "cancel_requested"
-            ):
-                raise HTTPException(409, "本次领取已结束或待核对")
+            if previous.status not in {"active", "reconciling"}:
+                return None
+            # Replay the same attempt after a lost response, including expired
+            # leases. Renew still refuses expired attempts; the Agent can report
+            # stopped without launching a worker, rather than strand its claim.
             return claim_view(
                 job, previous, db.get(TaskTemplate, job.template_id), settings
             )
@@ -442,21 +446,19 @@ def claim_once(body, node, db, settings):
             )
             for key in budget:
                 budget[key] += resources[key]
+        stopped_services = {
+            (i.node_id, i.definition_id)
+            for i in db.scalars(
+                select(ServiceInstance).where(
+                    ServiceInstance.desired_state == "stopped"
+                )
+            )
+        }
         for job in db.scalars(
             select(Job).where(Job.status == "queued").order_by(Job.created_at)
         ):
             template = db.get(TaskTemplate, job.template_id)
-            instance = (
-                db.scalar(
-                    select(ServiceInstance).where(
-                        ServiceInstance.node_id == node.id,
-                        ServiceInstance.definition_id == template.id,
-                    )
-                )
-                if template.kind.startswith("ai.")
-                else None
-            )
-            if instance and instance.desired_state == "stopped":
+            if (node.id, template.id) in stopped_services:
                 continue
             owner = db.get(User, job.owner_id)
             if not owner or owner.status != "active" or not accessible(owner, template):
@@ -482,6 +484,7 @@ def claim_once(body, node, db, settings):
             ):
                 if any(
                     n.id != node.id
+                    and (n.id, template.id) not in stopped_services
                     and n.policy.get("mode") == "shared"
                     and n.local_policy.get("mode") == "shared"
                     and eligible(

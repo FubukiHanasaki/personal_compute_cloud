@@ -177,6 +177,19 @@ def test_failed_stop_retains_backend_and_quarantines_resources(tmp_path):
     assert active.state == "error" and active.backend is backend
     with pytest.raises(RuntimeError, match="confirmation"):
         manager.acquire("unsafe")
+    manager.sync(
+        [
+            {
+                "definition_id": "next",
+                "desired_state": "auto",
+                "idle_seconds": 1,
+                "config": active.config,
+            }
+        ]
+    )
+    with pytest.raises(RuntimeError, match="confirmation"):
+        manager.acquire("next")
+    assert manager.services["next"].backend is None
 
 
 def test_loopback_probe_reuses_time_wait_but_refuses_a_live_server():

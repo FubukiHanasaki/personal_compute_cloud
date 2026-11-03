@@ -13,7 +13,7 @@ log = logging.getLogger("pcc.agent")
 
 
 class Agent:
-    def __init__(self, config_path):
+    def __init__(self, config_path, probe_isolation=True):
         self.config_path = Path(config_path)
         self.config = AgentConfig.load(config_path)
         self.config.work_root.mkdir(parents=True, exist_ok=True)
@@ -29,7 +29,12 @@ class Agent:
             if self.config.ca_file
             else True,
         )
-        self.isolation = isolation_capabilities(self.config)
+        self.isolation = (
+            isolation_capabilities(self.config)
+            if probe_isolation
+            and not (self.config.work_root / "active-attempt.json").exists()
+            else []
+        )
         from .services import ServiceManager
 
         self.services = ServiceManager(self.config)
@@ -79,25 +84,29 @@ class Agent:
         try:
             self._run_loop(once)
         finally:
-            self.services.stop_all()
-            self.client.close()
+            try:
+                self.services.stop_all()
+            finally:
+                self.client.close()
 
     def _run_loop(self, once=False):
         backoff = 1
         while True:
             try:
                 self.heartbeat()
-                self.services.tick()
                 backoff = 1
-                if once:
-                    return
                 journal = self.config.work_root / "active-attempt.json"
                 if journal.exists():
                     log.error(
                         "Unacknowledged attempt present: inspect worker termination before reconciliation"
                     )
+                    if once:
+                        return
                     time.sleep(self.config.heartbeat_seconds)
                     continue
+                self.services.tick()
+                if once:
+                    return
                 pending = self.config.work_root / "pending-claim.json"
                 if pending.exists():
                     claim_id = json.loads(pending.read_text())["claim_id"]
@@ -105,6 +114,7 @@ class Agent:
                     claim_id = uuid.uuid4().hex
                     with pending.open("x") as file:
                         json.dump({"claim_id": claim_id}, file)
+                sent = time.monotonic()
                 response = self.client.post(
                     "/internal/v1/jobs/claim",
                     json={
@@ -116,7 +126,11 @@ class Agent:
                 if response.status_code == 200:
                     from .execution import execute
 
-                    execute(self, response.json())
+                    payload = response.json()
+                    payload["_local_deadline"] = sent + max(
+                        0, payload["deadline"] - payload["server_time"]
+                    )
+                    execute(self, payload)
                 pending.unlink(missing_ok=True)
             except (httpx.HTTPError, OSError, ValueError) as exc:
                 log.warning(

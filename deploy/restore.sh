@@ -10,7 +10,7 @@ test "$(sed -n 's/^[0-9a-f]\{64\}  \(pcc.dump\|artifacts.tar.gz\)$/\1/p' "$backu
 docker compose stop server
 docker compose up -d --wait db
 # Validate paths/links/size and empty storage before changing the database.
-docker compose run --rm --no-deps -T --entrypoint sh server -ec 'python -m pcc_server.backup verify-stream; python -c "from pathlib import Path; p=Path(\"/data/artifacts\"); assert not p.exists() or not any(p.iterdir()), \"Artifact target must be empty\""' < "$backup_dir/artifacts.tar.gz"
+docker compose run --rm --no-deps -T --entrypoint sh server -ec 'python -m pcc_server.backup verify-stream; python -m pcc_server.backup check-restore-target /data/artifacts' < "$backup_dir/artifacts.tar.gz"
 # No --clean: existing tables cause failure and the transaction rolls back.
 docker compose exec -T db pg_restore -U pcc -d pcc --single-transaction --exit-on-error --no-owner --no-acl < "$backup_dir/pcc.dump"
 docker compose run --rm --no-deps -T --entrypoint python server -m pcc_server.backup unpack-stream /data/artifacts < "$backup_dir/artifacts.tar.gz"

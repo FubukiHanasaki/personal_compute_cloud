@@ -41,7 +41,7 @@ def validate_input(template, data):
         ):
             raise HTTPException(422, "统计模板需要 1–10000 个数字")
         if any(
-            type(v) not in {int, float} or not math.isfinite(v) or abs(v) > 1e12
+            type(v) not in {int, float} or abs(v) > 1e12 or not math.isfinite(v)
             for v in data["values"]
         ):
             raise HTTPException(422, "仅支持有限数字，绝对值不超过 1e12")
@@ -56,6 +56,7 @@ def validate_input(template, data):
             if (
                 not isinstance(msg, dict)
                 or set(msg) != {"role", "content"}
+                or not isinstance(msg["role"], str)
                 or msg["role"] not in {"system", "user", "assistant"}
                 or not isinstance(msg["content"], str)
                 or len(msg["content"]) > 16000
@@ -66,6 +67,7 @@ def validate_input(template, data):
             set(data) != {"prompt", "size"}
             or not isinstance(data["prompt"], str)
             or not 1 <= len(data["prompt"]) <= 2000
+            or not isinstance(data["size"], str)
             or data["size"] not in {"256x256", "512x512"}
         ):
             raise HTTPException(422, "图片参数无效")

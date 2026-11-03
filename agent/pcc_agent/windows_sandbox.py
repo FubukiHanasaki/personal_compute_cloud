@@ -17,6 +17,7 @@ import threading
 import time
 import uuid
 import re
+from .errors import WorkerStopUnconfirmed
 
 DWORD = C.c_uint32
 HANDLE = C.c_void_p
@@ -233,6 +234,7 @@ class WindowsWorker:
     def __init__(self, config, payload):
         self.kernel, self.userenv, self.advapi = api()
         self.lock = threading.RLock()
+        self.close_lock = threading.Lock()
         self.job = self.handle = None
         self.pid = None
         self.profile = None
@@ -255,7 +257,12 @@ class WindowsWorker:
         try:
             self._start(payload)
         except BaseException:
-            self.close()
+            try:
+                self.close()
+            except Exception as exc:
+                raise WorkerStopUnconfirmed(
+                    "Windows worker cleanup requires reconciliation"
+                ) from exc
             raise
 
     def acl(self, *args):
@@ -276,6 +283,10 @@ class WindowsWorker:
         if worker not in {"compute.stats", "synthetic.chat", "synthetic.image"}:
             raise RuntimeError("Unapproved Windows worker")
         limits = payload["limits"]
+        wall_deadline = min(
+            time.monotonic() + limits["timeout_seconds"],
+            payload.get("_local_deadline", float("inf")),
+        )
         self.output_limit = min(int(limits["output_bytes"]) * 2 + 65536, 20 * 2**20)
         self.profile = "PCC.Worker." + uuid.uuid4().hex
         hr = self.userenv.CreateAppContainerProfile(
@@ -338,17 +349,15 @@ class WindowsWorker:
         checked(
             self.kernel.SetInformationJobObject(self.job, 4, C.byref(ui), C.sizeof(ui))
         )
-        stdin_read, stdin_write = os.pipe()
-        stdout_read, stdout_write = os.pipe()
-        stderr_read, stderr_write = os.pipe()
-        self.pipes = [
-            stdin_read,
-            stdin_write,
-            stdout_read,
-            stdout_write,
-            stderr_read,
-            stderr_write,
-        ]
+
+        def pipe():
+            pair = os.pipe()
+            self.pipes.extend(pair)
+            return pair
+
+        stdin_read, stdin_write = pipe()
+        stdout_read, stdout_write = pipe()
+        stderr_read, stderr_write = pipe()
         child_fds = [stdin_read, stdout_write, stderr_write]
         for fd in child_fds:
             os.set_inheritable(fd, True)
@@ -427,8 +436,13 @@ class WindowsWorker:
                 thread = threading.Thread(
                     target=self._read, args=(fd, buffer), daemon=True
                 )
-                self.threads.append(thread)
                 thread.start()
+                self.threads.append(thread)
+            # Arm before ResumeThread/stdin writes, which can block on a pipe.
+            startup_deadline = min(
+                wall_deadline, payload.get("_local_start_deadline", float("inf"))
+            )
+            self._arm_timer(startup_deadline)
             if self.kernel.ResumeThread(process.thread) == 0xFFFFFFFF:
                 raise C.WinError(C.get_last_error())
         finally:
@@ -439,7 +453,19 @@ class WindowsWorker:
         with os.fdopen(stdin_write, "wb") as stream:
             self.pipes.remove(stdin_write)
             stream.write(data)
-        self.timer = threading.Timer(limits["timeout_seconds"], self.stop)
+        if time.monotonic() >= startup_deadline:
+            raise RuntimeError("Lease expired during Windows worker startup")
+        # The Agent's lease guard takes over after construction; renewed leases
+        # must not be cut short by the initial startup lease timer.
+        self._arm_timer(wall_deadline)
+
+    def _arm_timer(self, deadline):
+        if self.timer:
+            self.timer.cancel()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Deadline expired before Windows worker startup")
+        self.timer = threading.Timer(remaining, self.stop)
         self.timer.daemon = True
         self.timer.start()
 
@@ -478,7 +504,9 @@ class WindowsWorker:
                 checked(self.kernel.TerminateJobObject(self.job, 1))
             if self.handle and self.poll() is None:
                 # Also covers failure before assignment, while still suspended.
-                checked(self.kernel.TerminateProcess(self.handle, 1))
+                terminated = self.kernel.TerminateProcess(self.handle, 1)
+                if not terminated and self.poll() is None:
+                    checked(terminated)
             if self.handle:
                 self.wait(timeout=10)
             if self.job:
@@ -508,7 +536,9 @@ class WindowsWorker:
         return json.loads(self.output.getvalue())
 
     def close(self):
-        with self.lock:
+        # Readers may call stop(), which takes self.lock. Never hold that lock
+        # while joining them, or output overflow races with cleanup.
+        with self.close_lock:
             if self.closed:
                 return
             if self.timer:
@@ -517,21 +547,30 @@ class WindowsWorker:
             for thread in self.threads:
                 if thread is not threading.current_thread():
                     thread.join(timeout=10)
-            for fd in self.pipes:
+                    if thread.is_alive():
+                        raise RuntimeError(
+                            "Cannot confirm Windows output reader stopped"
+                        )
+            while self.pipes:
+                fd = self.pipes[0]
                 os.close(fd)
-            self.pipes.clear()
-            for handle in (self.handle, self.job):
-                if handle:
-                    self.kernel.CloseHandle(handle)
-            self.handle = self.job = None
+                self.pipes.remove(fd)
+            with self.lock:
+                for handle in (self.handle, self.job):
+                    if handle:
+                        self.kernel.CloseHandle(handle)
+                self.handle = self.job = None
             if self.sid_text:
                 self.acl(self.runtime, "/remove:g", f"*{self.sid_text}", "/T", "/Q")
+                self.sid_text = None
             if self.profile:
                 result = self.userenv.DeleteAppContainerProfile(self.profile)
                 if result < 0:
                     raise OSError(f"DeleteAppContainerProfile failed: {result:#x}")
+                self.profile = None
             if self.sid:
                 self.advapi.FreeSid(self.sid)
+                self.sid = HANDLE()
             self.directory.cleanup()
             if self.marker:
                 self.marker.unlink(missing_ok=True)
@@ -621,6 +660,15 @@ def probe(config):
         try:
             return worker.result()["result"]["sum"] == 1
         finally:
-            worker.close()
+            try:
+                worker.close()
+            except Exception as exc:
+                raise WorkerStopUnconfirmed(
+                    "Windows probe cleanup requires reconciliation"
+                ) from exc
+    except WorkerStopUnconfirmed:
+        # An unknown surviving probe is not an unavailable capability. Abort
+        # startup so the OS closes this Agent's kill-on-close Job handles.
+        raise
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
         return False

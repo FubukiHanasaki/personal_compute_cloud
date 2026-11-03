@@ -8,6 +8,7 @@ import threading
 from pathlib import Path
 import httpx
 from .sandbox import SandboxedWorker
+from .errors import WorkerStopUnconfirmed
 
 log = logging.getLogger("pcc.agent")
 
@@ -40,8 +41,10 @@ def execute(agent, payload):
     guardian_expired = threading.Event()
     guardian = None
     completion = None
-    local_deadline = time.monotonic() + max(
-        0, payload["deadline"] - payload.get("server_time", time.time())
+    local_deadline = payload.get(
+        "_local_deadline",
+        time.monotonic()
+        + max(0, payload["deadline"] - payload.get("server_time", time.time())),
     )
     try:
         agent.heartbeat()
@@ -77,6 +80,22 @@ def execute(agent, payload):
         if renewed["cancel_requested"]:
             raise RuntimeError("Cancellation requested")
         expires = [renewed["_local_lease_deadline"]]
+
+        def guard_lease():
+            while not guardian_done.wait(0.1):
+                if time.monotonic() >= min(expires[0] - 1, local_deadline):
+                    guardian_expired.set()
+                    if worker is not None:
+                        try:
+                            worker.stop()
+                        except Exception:
+                            log.error("Worker stop could not be confirmed")
+                        return
+
+        guardian = threading.Thread(target=guard_lease, daemon=True)
+        guardian.start()
+        if time.monotonic() >= min(expires[0] - 1, local_deadline):
+            raise RuntimeError("Lease expired before worker startup")
         if payload["template"]["worker"].startswith(("ollama:", "comfyui:")):
             from .services import InferenceWorker
 
@@ -87,7 +106,18 @@ def execute(agent, payload):
             ):
                 synthetic_service = agent.services.acquire(payload["template"]["id"])
                 agent.services.ready(synthetic_service)
-            worker = SandboxedWorker(agent.config, payload)
+            worker = SandboxedWorker(
+                agent.config,
+                {
+                    **payload,
+                    "_local_deadline": local_deadline,
+                    "_local_start_deadline": min(expires[0] - 1, local_deadline),
+                },
+            )
+        if guardian_expired.is_set() or time.monotonic() >= min(
+            expires[0] - 1, local_deadline
+        ):
+            raise RuntimeError("Lease expired during worker startup")
         record = {"job_id": job_id, **lease}
         if hasattr(worker, "process"):
             import psutil
@@ -104,18 +134,6 @@ def execute(agent, payload):
         with journal.open("w") as file:
             json.dump(record, file)
 
-        def guard_lease():
-            while not guardian_done.wait(0.1):
-                if time.monotonic() >= min(expires[0] - 1, local_deadline):
-                    guardian_expired.set()
-                    try:
-                        worker.stop()
-                    except Exception:
-                        log.error("Worker stop could not be confirmed")
-                    return
-
-        guardian = threading.Thread(target=guard_lease, daemon=True)
-        guardian.start()
         post(
             agent,
             base + "/events",
@@ -141,6 +159,7 @@ def execute(agent, payload):
         output = worker.result()
         # Completed inference may stay loaded until its idle policy expires.
         renewed = post(agent, base + "/renew", lease)
+        expires[0] = renewed["_local_lease_deadline"]
         if renewed["cancel_requested"]:
             raise RuntimeError("Cancellation requested")
         artifact_ids = []
@@ -158,6 +177,8 @@ def execute(agent, payload):
         post(agent, base + "/complete", completion)
         confirmed = True
     except Exception as exc:
+        if isinstance(exc, WorkerStopUnconfirmed):
+            raise
         if worker:
             worker.stop()
         try:
