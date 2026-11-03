@@ -21,6 +21,11 @@ import {
 } from "./api";
 import "./style.css";
 import { NodePolicy } from "./NodePolicy";
+import { NodeResources, Progress } from "./Visuals";
+import { TemplateEditor } from "./TemplateEditor";
+import { GrantEditor } from "./GrantEditor";
+import { ThemePicker } from "./ThemePicker";
+import { ArtifactPreview } from "./ArtifactPreview";
 
 type View =
   "jobs" | "chat" | "images" | "nodes" | "services" | "access" | "audit";
@@ -78,14 +83,14 @@ function Logo() {
     <div className="logo">
       <span className="logo-mark">◈</span>
       <div>
-        PCC<small>PERSONAL COMPUTE CLOUD</small>
+        PCC<small>个人计算云</small>
       </div>
     </div>
   );
 }
 
 function Login({ onLogin }: { onLogin: (user: User) => void }) {
-  const [username, setUsername] = useState("Fubuki");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -112,36 +117,23 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
       <section className="login-story">
         <Logo />
         <div className="story-body">
-          <span className="eyebrow">YOUR MACHINES. ONE CLOUD.</span>
           <h1>
-            让每一份算力
+            你的设备。
             <br />
-            各就其位。
+            一个工作空间。
           </h1>
-          <p>
-            连接你拥有的计算资源。
-            <br />
-            在统一的工作空间中提交任务、对话与创作。
-          </p>
-          <div className="orbit">
+          <div className="cloud-art" aria-hidden="true">
             <i />
             <i />
             <i />
             <b>◈</b>
-          </div>
-          <div className="principles">
-            <span>出站连接</span>
-            <span>能力调度</span>
-            <span>本地优先</span>
           </div>
         </div>
         <small>Personal Compute Cloud · FubukiHanasaki</small>
       </section>
       <main className="login-main">
         <form onSubmit={submit}>
-          <span className="eyebrow">欢迎回来</span>
           <h2>登录工作空间</h2>
-          <p className="muted">使用管理员为你创建的账号。</p>
           <label>
             用户名
             <input
@@ -170,7 +162,6 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
           <button className="primary wide" disabled={busy}>
             {busy ? "正在登录…" : "进入控制台 →"}
           </button>
-          <p className="login-note">私有部署 · 安全会话 · 无需安装客户端</p>
         </form>
       </main>
     </div>
@@ -187,6 +178,8 @@ function App() {
   const [models, setModels] = useState<Model[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [policyUsers, setPolicyUsers] = useState<User[]>([]);
+  const [sampledAt, setSampledAt] = useState<Date | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [jobOffset, setJobOffset] = useState(0);
@@ -222,14 +215,19 @@ function App() {
       setTemplates(t);
       setImageJobs(images.items);
       if (admin) {
-        const [n, s] = await Promise.all([
+        const [n, s, u] = await Promise.all([
           listAll<Node>("/api/v1/nodes"),
           listAll<Service>("/api/v1/admin/services"),
+          user.role === "owner"
+            ? listAll<User>("/api/v1/admin/users")
+            : Promise.resolve([]),
         ]);
         if (currentUser.current !== user) return;
         setNodes(n);
         setServices(s);
+        setPolicyUsers(u);
       }
+      if (currentUser.current === user) setSampledAt(new Date());
     } catch (e) {
       if (currentUser.current === user) setError(message(e));
     }
@@ -265,6 +263,8 @@ function App() {
           setJobs([]);
           setImageJobs([]);
           setNodes([]);
+          setPolicyUsers([]);
+          setSampledAt(null);
           setServices([]);
           setTemplates([]);
           setModels([]);
@@ -298,10 +298,11 @@ function App() {
       <aside className="sidebar">
         <Logo />
         <div className="workspace-label">工作空间</div>
-        <nav>
+        <nav aria-label="主导航">
           {nav.map(([key, label, icon]) => (
             <button
               key={key}
+              aria-current={view === key ? "page" : undefined}
               className={view === key ? "active" : ""}
               onClick={() => {
                 setView(key);
@@ -328,7 +329,7 @@ function App() {
             {user.username[0]?.toUpperCase()}
           </div>
           <div>
-            <strong>{user.username}</strong>
+            <strong title={user.username}>{user.username}</strong>
             <small>{user.role.toUpperCase()}</small>
           </div>
           <button
@@ -344,7 +345,6 @@ function App() {
             ↗
           </button>
         </div>
-        <div className="signature">DESIGNED & BUILT BY FubukiHanasaki</div>
       </aside>
       <div className="main-wrap">
         <header className="topbar">
@@ -352,7 +352,10 @@ function App() {
             个人计算云 <i>/</i> {titles[view][0]}
           </span>
           <span className="workspace-state">
-            <b /> 私有工作空间{" "}
+            <b />{" "}
+            {sampledAt
+              ? `更新于 ${sampledAt.toLocaleTimeString("zh-CN", { hour12: false })}`
+              : "正在刷新"}{" "}
             <button
               className="mobile-logout"
               onClick={() =>
@@ -370,9 +373,7 @@ function App() {
         <main className="content">
           <div className="page-heading">
             <div>
-              <span className="eyebrow">PERSONAL COMPUTE CLOUD</span>
               <h1>{titles[view][0]}</h1>
-              <p>{titles[view][1]}</p>
             </div>
             <button onClick={() => void refresh()} className="secondary">
               ↻ 刷新
@@ -381,13 +382,17 @@ function App() {
           {error && (
             <div role="alert" className="notice error-notice">
               {error}
-              <button onClick={() => setError("")}>×</button>
+              <button aria-label="关闭错误" onClick={() => setError("")}>
+                ×
+              </button>
             </div>
           )}
           {notice && (
             <div role="status" className="notice">
               {notice}
-              <button onClick={() => setNotice("")}>×</button>
+              <button aria-label="关闭提示" onClick={() => setNotice("")}>
+                ×
+              </button>
             </div>
           )}
           {view === "jobs" && (
@@ -437,9 +442,8 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h2>任务历史</h2>
-                    <p>离开页面后，任务仍将在后台运行。</p>
                   </div>
-                  <span className="mono">{jobs.length} RECORDS</span>
+                  <span>{jobs.length} 项</span>
                 </div>
                 <JobTable jobs={jobs} select={setSelected} />
                 <div className="pagination">
@@ -504,39 +508,7 @@ function App() {
                           </div>
                           <Badge value={n.status} />
                         </div>
-                        <div className="resource-label">
-                          <span>资源</span>
-                          <span>物理 / 可分配 / 可用</span>
-                        </div>
-                        {(["cpu", "memory_mb", "vram_mb"] as const).map((k) => (
-                          <div className="resource-row" key={k}>
-                            <span>
-                              {k === "cpu"
-                                ? "CPU"
-                                : k === "memory_mb"
-                                  ? "内存"
-                                  : "显存"}
-                            </span>
-                            <strong>
-                              {[
-                                n.capabilities.physical?.[k],
-                                n.capabilities.allocatable?.[k],
-                                n.capabilities.available?.[k],
-                              ]
-                                .map((v) => v ?? 0)
-                                .join(" / ")}{" "}
-                              {k === "cpu" ? "核" : "MB"}
-                            </strong>
-                          </div>
-                        ))}
-                        <div className="node-load">
-                          <span>
-                            CPU {Math.round(n.capabilities.cpu_load || 0)}%
-                          </span>
-                          <span>
-                            RAM {Math.round(n.capabilities.memory_load || 0)}%
-                          </span>
-                        </div>
+                        <NodeResources node={n} />
                         <p className="small muted">
                           本地模式：
                           {labels[String(n.local_policy.mode)] || "未报告"} ·
@@ -600,6 +572,7 @@ function App() {
                         </div>
                         <NodePolicy
                           node={n}
+                          users={policyUsers}
                           save={(policy) =>
                             act(() =>
                               api(
@@ -657,7 +630,13 @@ function App() {
                             <Badge value={s.state} />
                           </td>
                           <td className="mono">{s.active_requests}</td>
-                          <td>{s.desired_state}</td>
+                          <td>
+                            {{
+                              ready: "保持加载",
+                              stopped: "保持停止",
+                              auto: "按需",
+                            }[s.desired_state] || s.desired_state}
+                          </td>
                           <td>
                             <button
                               onClick={() =>
@@ -710,12 +689,13 @@ function App() {
             </section>
           )}
           {view === "access" && (
-            <Access user={user} templates={templates} act={act} />
+            <Access user={user} templates={templates} nodes={nodes} act={act} />
           )}
           {view === "audit" && <Audit />}
         </main>
         <footer>
-          Personal Compute Cloud <span>FubukiHanasaki · v0.1.0</span>
+          <span>Personal Compute Cloud · FubukiHanasaki</span>
+          <ThemePicker />
         </footer>
       </div>
       {selected && (
@@ -754,14 +734,18 @@ function JobTable({
                 <strong>{j.template_id}</strong>
                 <small className="mono">{j.job_id.slice(0, 12)}</small>
               </td>
-              <td>{j.task_type}</td>
+              <td>
+                {{
+                  "compute.stats": "数字统计",
+                  "ai.chat": "对话",
+                  "ai.image": "图片",
+                }[j.task_type] || j.task_type}
+              </td>
               <td>
                 <Badge value={j.status} />
               </td>
               <td>
-                <div className="progress">
-                  <i style={{ width: `${j.progress * 100}%` }} />
-                </div>
+                <Progress value={j.progress} />
               </td>
               <td className="nowrap muted">{stamp(j.created_at)}</td>
               <td>
@@ -820,7 +804,6 @@ function ComputeForm({
     >
       <div>
         <h2>发起计算</h2>
-        <p>选择已批准的计算模板</p>
       </div>
       <label>
         任务模板
@@ -978,6 +961,7 @@ function JobDetails({
             </div>
             {job.queue_reason && <p className="notice">{job.queue_reason}</p>}
             {job.error && <p className="notice error-notice">{job.error}</p>}
+            <Progress value={job.progress} />
             <h3>结果</h3>
             <pre>{job.result ? pretty(job.result) : "等待执行结果…"}</pre>
             <h3>工件</h3>
@@ -986,6 +970,7 @@ function JobDetails({
                 <div className="artifact" key={a.id}>
                   <span>↧</span>
                   <div>
+                    <ArtifactPreview artifact={a} />
                     <a href={a.download_url}>{a.name}</a>
                     <small>
                       {(a.size / 1024).toFixed(1)} KB · 保留至{" "}
@@ -1092,7 +1077,6 @@ function Chat({
           <div className="chat-welcome">
             <span>◈</span>
             <h2>从一个问题开始</h2>
-            <p>请求会发送到你已获授权的计算节点。</p>
             {!available.length && <p>请管理员先登记模型并接入对应 Worker。</p>}
           </div>
         ) : (
@@ -1122,9 +1106,6 @@ function Chat({
           {busy ? "等待中…" : "发送 ↑"}
         </button>
       </form>
-      <div className="chat-note">
-        历史结果保存在任务工作台 · 模型输出请自行核实
-      </div>
     </section>
   );
 }
@@ -1146,7 +1127,7 @@ function Images({
   const available = models.filter((m) => m.task_type === "ai.image");
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [size, setSize] = useState("256x256");
+  const [size, setSize] = useState("512x512");
   const [busy, setBusy] = useState(false);
   return (
     <>
@@ -1278,9 +1259,11 @@ function Enrollment({
 function Access({
   user,
   templates,
+  nodes,
   act,
 }: {
   user: User;
+  nodes: Node[];
   templates: Template[];
   act: (f: () => Promise<unknown>, success?: string) => Promise<void>;
 }) {
@@ -1303,286 +1286,265 @@ function Access({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("user");
-  const [templateBody, setTemplateBody] = useState(
-    pretty({
-      id: "stats",
-      name: "数字统计",
-      kind: "compute.stats",
-      worker: "compute.stats",
-      public: true,
-      retry_safe: true,
-    }),
-  );
   const [grantId, setGrantId] = useState("");
-  const [grants, setGrants] = useState(
-    '{"templates":[],"nodes":[],"view_nodes":[],"jobs":[]}',
-  );
+  const [tab, setTab] = useState("keys");
   const load = useCallback(async () => {
     setKeys(await listAll<(typeof keys)[number]>("/api/v1/keys"));
     if (user.role === "owner")
       setUsers(await listAll<User>("/api/v1/admin/users"));
   }, [user.role]);
   useEffect(() => {
-    void act(load, "凭证列表已更新");
+    void act(load);
   }, [load]);
   return (
     <>
-      <section className="panel pad">
-        <h2>API Key</h2>
-        <p>新密钥只显示一次。为不同应用选择最少作用域，默认一天有效。</p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(async () => {
-              const d = await api<{ key: string }>("/api/v1/keys", "POST", {
-                scopes,
-                expires_seconds: hours * 3600,
-              });
-              setRaw(d.key);
-              await load();
-            }, "密钥已创建");
-          }}
-        >
-          <div className="checkbox-row">
-            {[
-              "jobs:read",
-              "jobs:write",
-              "models:read",
-              "nodes:read",
-              ...(user.role === "owner" || user.role === "admin"
-                ? ["admin"]
-                : []),
-            ].map((scope) => (
-              <label key={scope}>
-                <input
-                  type="checkbox"
-                  checked={scopes.includes(scope)}
-                  onChange={(e) =>
-                    setScopes(
-                      e.target.checked
-                        ? [...scopes, scope]
-                        : scopes.filter((s) => s !== scope),
-                    )
-                  }
-                />
-                {scope}
-              </label>
-            ))}
-          </div>
-          <label style={{ maxWidth: 180, marginBottom: 16 }}>
-            有效时长（小时）
-            <input
-              type="number"
-              min={1}
-              max={2160}
-              required
-              value={hours}
-              onChange={(e) => setHours(Number(e.target.value))}
-            />
-          </label>
-          <button className="primary" disabled={!scopes.length}>
-            创建密钥 +
+      <div className="tabs" role="group" aria-label="访问设置">
+        {[
+          ["keys", "API 密钥"],
+          ...(user.role === "owner"
+            ? [
+                ["users", "用户授权"],
+                ["catalog", "模型与模板"],
+              ]
+            : []),
+          ["password", "账号安全"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            aria-pressed={tab === key}
+            className={tab === key ? "active" : ""}
+            onClick={() => setTab(key)}
+          >
+            {label}
           </button>
-        </form>
-        {raw && (
-          <div className="secret-display">
-            <code>{raw}</code>
-            <button onClick={() => setRaw("")}>隐藏密钥</button>
-          </div>
-        )}
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>凭证</th>
-                <th>作用域</th>
-                <th>到期</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {keys.map((k) => (
-                <tr key={k.id}>
-                  <td className="mono">{k.id.slice(0, 10)}</td>
-                  <td>{k.scopes.join(", ")}</td>
-                  <td>{stamp(k.expires_at)}</td>
-                  <td>
-                    {k.revoked_at ? (
-                      "已撤销"
-                    ) : (
-                      <button
-                        onClick={() =>
-                          void act(async () => {
-                            await api(`/api/v1/keys/${k.id}/revoke`, "POST");
-                            await load();
-                          }, "密钥已撤销")
-                        }
-                      >
-                        撤销
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      {user.role === "owner" && (
-        <>
-          <section className="panel pad">
-            <h2>用户管理</h2>
-            <form
-              className="form-row"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(async () => {
-                  await api("/api/v1/admin/users", "POST", {
-                    username,
-                    password,
-                    role,
-                  });
-                  setPassword("");
-                  setUsername("");
-                  await load();
-                }, "用户已创建");
-              }}
-            >
-              <label>
-                用户名
-                <input
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
-              </label>
-              <label>
-                初始密码
-                <input
-                  type="password"
-                  required
-                  minLength={16}
-                  maxLength={256}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-              </label>
-              <label>
-                角色
-                <select value={role} onChange={(e) => setRole(e.target.value)}>
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-              <button className="primary">创建用户</button>
-            </form>
-            <div className="user-list">
-              {users.map((u) => (
-                <div key={u.id}>
-                  <strong>{u.username}</strong>
-                  <span>
-                    {u.role} · {u.status}
-                  </span>
-                  {u.role !== "owner" && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setGrantId(u.id);
-                          setGrants(pretty(u.grants));
-                        }}
-                      >
-                        编辑授权
-                      </button>
-                      <button
-                        className="danger-text"
-                        onClick={() =>
-                          void act(async () => {
-                            await api(`/api/v1/admin/users/${u.id}`, "PUT", {
-                              status:
-                                u.status === "active" ? "disabled" : "active",
-                              grants: u.grants,
-                            });
-                            await load();
-                          })
-                        }
-                      >
-                        {u.status === "active" ? "禁用" : "启用"}
-                      </button>
-                    </>
-                  )}
-                </div>
+        ))}
+      </div>
+      {tab === "keys" && (
+        <section className="panel pad">
+          <h2>API Key</h2>
+          <p>新密钥只显示一次。为不同应用选择最少作用域，默认一天有效。</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void act(async () => {
+                const d = await api<{ key: string }>("/api/v1/keys", "POST", {
+                  scopes,
+                  expires_seconds: hours * 3600,
+                });
+                setRaw(d.key);
+                await load();
+              }, "密钥已创建");
+            }}
+          >
+            <div className="checkbox-row">
+              {[
+                "jobs:read",
+                "jobs:write",
+                "models:read",
+                "nodes:read",
+                ...(user.role === "owner" || user.role === "admin"
+                  ? ["admin"]
+                  : []),
+              ].map((scope) => (
+                <label key={scope}>
+                  <input
+                    type="checkbox"
+                    checked={scopes.includes(scope)}
+                    onChange={(e) =>
+                      setScopes(
+                        e.target.checked
+                          ? [...scopes, scope]
+                          : scopes.filter((s) => s !== scope),
+                      )
+                    }
+                  />
+                  {scope}
+                </label>
               ))}
             </div>
-            {grantId && (
+            <label style={{ maxWidth: 180, marginBottom: 16 }}>
+              有效时长（小时）
+              <input
+                type="number"
+                min={1}
+                max={2160}
+                required
+                value={hours}
+                onChange={(e) => setHours(Number(e.target.value))}
+              />
+            </label>
+            <button className="primary" disabled={!scopes.length}>
+              创建密钥 +
+            </button>
+          </form>
+          {raw && (
+            <div className="secret-display">
+              <code>{raw}</code>
+              <button onClick={() => setRaw("")}>隐藏密钥</button>
+            </div>
+          )}
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>凭证</th>
+                  <th>作用域</th>
+                  <th>到期</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map((k) => (
+                  <tr key={k.id}>
+                    <td className="mono">{k.id.slice(0, 10)}</td>
+                    <td>{k.scopes.join(", ")}</td>
+                    <td>{stamp(k.expires_at)}</td>
+                    <td>
+                      {k.revoked_at ? (
+                        "已撤销"
+                      ) : (
+                        <button
+                          onClick={() =>
+                            void act(async () => {
+                              await api(`/api/v1/keys/${k.id}/revoke`, "POST");
+                              await load();
+                            }, "密钥已撤销")
+                          }
+                        >
+                          撤销
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {user.role === "owner" && (
+        <>
+          {tab === "users" && (
+            <section className="panel pad">
+              <h2>用户管理</h2>
               <form
+                className="form-row"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void act(async () => {
-                    await api(`/api/v1/admin/users/${grantId}`, "PUT", {
-                      grants: JSON.parse(grants),
+                    await api("/api/v1/admin/users", "POST", {
+                      username,
+                      password,
+                      role,
                     });
-                    setGrantId("");
+                    setPassword("");
+                    setUsername("");
                     await load();
-                  }, "资源授权已保存");
+                  }, "用户已创建");
                 }}
               >
                 <label>
-                  明确授权的资源 ID
-                  <textarea
-                    className="mono"
-                    value={grants}
-                    onChange={(e) => setGrants(e.target.value)}
+                  用户名
+                  <input
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                   />
                 </label>
-                <button className="primary">保存授权</button>
+                <label>
+                  初始密码
+                  <input
+                    type="password"
+                    required
+                    minLength={16}
+                    maxLength={256}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label>
+                  角色
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                  >
+                    <option value="user">普通用户</option>
+                    <option value="admin">管理员</option>
+                  </select>
+                </label>
+                <button className="primary">创建用户</button>
               </form>
-            )}
-          </section>
-          <section className="panel pad">
-            <h2>批准任务 / AI 模板</h2>
-            <p>
-              只支持内置允许的适配器。AI 模板额外填写 model
-              和资源需求；模型环境由节点管理员准备。
-            </p>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(
-                  () =>
-                    api(
-                      "/api/v1/admin/templates",
-                      "POST",
-                      JSON.parse(templateBody),
-                    ),
-                  "模板已批准",
-                );
-              }}
-            >
-              <label>
-                模板配置
-                <textarea
-                  className="mono template-editor"
-                  required
-                  value={templateBody}
-                  onChange={(e) => setTemplateBody(e.target.value)}
+              <div className="user-list">
+                {users.map((u) => (
+                  <div key={u.id}>
+                    <strong>{u.username}</strong>
+                    <span>
+                      {
+                        { owner: "所有者", admin: "管理员", user: "普通用户" }[
+                          u.role
+                        ]
+                      }{" "}
+                      · {u.status === "active" ? "启用" : "禁用"}
+                    </span>
+                    {u.role !== "owner" && (
+                      <>
+                        <button
+                          onClick={() => {
+                            setGrantId(u.id);
+                          }}
+                        >
+                          编辑授权
+                        </button>
+                        <button
+                          className="danger-text"
+                          onClick={() =>
+                            void act(async () => {
+                              if (
+                                !confirm(
+                                  `${u.status === "active" ? "禁用" : "启用"}用户 ${u.username}？${u.status === "active" ? "现有会话和密钥将失效。" : ""}`,
+                                )
+                              )
+                                return;
+                              await api(`/api/v1/admin/users/${u.id}`, "PUT", {
+                                status:
+                                  u.status === "active" ? "disabled" : "active",
+                                grants: u.grants,
+                              });
+                              await load();
+                            })
+                          }
+                        >
+                          {u.status === "active" ? "禁用" : "启用"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {grantId && users.find((u) => u.id === grantId) && (
+                <GrantEditor
+                  key={grantId}
+                  user={users.find((u) => u.id === grantId)!}
+                  templates={templates}
+                  nodes={nodes}
+                  save={async (f, success) => {
+                    await act(async () => {
+                      await f();
+                      await load();
+                    }, success);
+                  }}
+                  cancel={() => setGrantId("")}
                 />
-              </label>
-              <button className="primary">批准并登记</button>
-            </form>
-            <div className="template-list">
-              {templates.map((t) => (
-                <div key={t.id}>
-                  <strong>{t.name}</strong>
-                  <code>{t.id}</code>
-                  <span>{t.worker}</span>
-                </div>
-              ))}
-            </div>
-          </section>
+              )}
+            </section>
+          )}
+          {tab === "catalog" && (
+            <TemplateEditor templates={templates} act={act} />
+          )}
         </>
       )}
-      <PasswordChange act={act} />
+      {tab === "password" && <PasswordChange act={act} />}
     </>
   );
 }

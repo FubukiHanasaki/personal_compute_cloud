@@ -30,3 +30,6 @@ pythonpath = ["server", "agent"]
 testpaths = ["tests"]
 addopts = "-ra --basetemp=tmp/pytest"
 cache_dir = "tmp/pytest-cache"
+
+[tool.setuptools.package-data]
+pcc_agent = ["gui_assets/*.html", "gui_assets/*.css", "gui_assets/*.js"]

@@ -14,12 +14,31 @@ def main():
     parser = argparse.ArgumentParser(description="PCC Agent · FubukiHanasaki")
     parser.add_argument(
         "command",
-        choices=["init", "register", "run", "check", "reconcile", "cleanup-windows"],
+        choices=[
+            "init",
+            "register",
+            "run",
+            "check",
+            "reconcile",
+            "cleanup-windows",
+            "gui",
+        ],
     )
     parser.add_argument("--config", default="agent.toml")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--confirm-stopped", action="store_true")
+    parser.add_argument(
+        "--port", type=int, default=0, help="Local GUI port (default: automatic)"
+    )
+    parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
+    if args.command == "gui":
+        from .gui import serve
+
+        if not 0 <= args.port <= 65535:
+            parser.error("Invalid GUI port")
+        serve(args.config, args.port, not args.no_browser)
+        return
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )

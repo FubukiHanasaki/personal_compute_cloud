@@ -24,6 +24,34 @@ class TemplateCreate(Strict):
     idle_seconds: int = Field(default=300, ge=1, le=86400)
 
 
+class TemplateVisibility(Strict):
+    public: bool
+
+
+@router.put("/api/v1/admin/templates/{template_id}/visibility")
+def template_visibility(
+    template_id: str,
+    body: TemplateVisibility,
+    user=Depends(admin),
+    db=Depends(get_db),
+):
+    if user.role != "owner":
+        raise HTTPException(403, "只有 Owner 可修改模板开放范围")
+    with transaction(db):
+        row = db.get(TaskTemplate, template_id)
+        if not row:
+            raise HTTPException(404, "模板不存在")
+        row.public = body.public
+        audit(
+            db,
+            user.id,
+            "template.visibility",
+            row.id,
+            "public" if body.public else "restricted",
+        )
+    return {"id": row.id, "public": row.public}
+
+
 def accessible(user, template):
     return template.enabled and (
         user.role == "owner"
@@ -175,6 +203,7 @@ def list_templates(
                 "kind": t.kind,
                 "worker": t.worker,
                 "config": t.config,
+                "public": t.public,
             }
             for t in templates[offset : offset + limit]
         ],

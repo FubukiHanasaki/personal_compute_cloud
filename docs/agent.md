@@ -2,6 +2,8 @@
 
 作者：FubukiHanasaki。Python 3.12–3.14；Linux / Windows 10/11 或受支持 Windows Server。Agent 仅主动访问服务器 HTTPS，不监听入站端口，无需公网 IP 或 Tailscale。
 
+配置也可使用 `pcc-agent gui --config agent.toml` 打开本机浏览器页面；新版 GUI 不会自动启动 Agent。连接、资源监测、Ollama/ComfyUI 配置和更新脚本见[界面与更新说明](ui-and-updates.md)。
+
 ## Linux
 
 用专用普通用户克隆源码，安装 Python venv 支持后运行：

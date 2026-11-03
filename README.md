@@ -15,6 +15,10 @@
 - **身份与工件**：Owner / Admin / User、资源授权、会话与 CSRF、作用域 API Key、授权下载、SHA256 校验、保留期限与清理。
 - **中文界面与 API**：节点、任务、模型、访问授权管理；用户任务面板、Chat、图片生成；提供 PCC 原生 API 和有限的 OpenAI 兼容 Chat 接口。
 
+## 界面与本机配置
+
+服务端采用可更换的七色主题、资源仪表和任务进度条；Owner 可用表单登记模型、切换开放范围并勾选用户授权。Agent 本机配置入口为 `pcc-agent gui --config agent.toml`，支持连接、CA、资源与 Ollama/ComfyUI 设置。Windows/Linux/macOS 更新脚本默认只检查 GitHub，显式参数才快进拉取。详见[界面与更新说明](docs/ui-and-updates.md)。
+
 ## 架构
 
 ```mermaid

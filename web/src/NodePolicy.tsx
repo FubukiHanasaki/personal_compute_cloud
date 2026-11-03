@@ -1,12 +1,14 @@
 // Author: FubukiHanasaki
 import { useEffect, useState } from "react";
-import type { Node } from "./api";
+import type { Node, User } from "./api";
 
 export function NodePolicy({
   node,
+  users,
   save,
 }: {
   node: Node;
+  users: User[];
   save: (policy: Record<string, unknown>) => Promise<void>;
 }) {
   const [allowed, setAllowed] = useState("");
@@ -38,14 +40,49 @@ export function NodePolicy({
           });
         }}
       >
-        <label>
-          预留用户 ID（逗号分隔）
-          <input
-            value={allowed}
-            onChange={(e) => setAllowed(e.target.value)}
-            placeholder="Reserved 模式允许的用户 ID"
-          />
-        </label>
+        {users.length ? (
+          <fieldset>
+            <legend>预留用户</legend>
+            <div className="choice-grid">
+              {users
+                .filter((user) => user.status === "active")
+                .map((user) => (
+                  <label className="check-label" key={user.id}>
+                    <input
+                      type="checkbox"
+                      checked={allowed
+                        .split(",")
+                        .map((v) => v.trim())
+                        .includes(user.id)}
+                      onChange={(e) => {
+                        const ids = allowed
+                          .split(",")
+                          .map((v) => v.trim())
+                          .filter(Boolean);
+                        setAllowed(
+                          (e.target.checked
+                            ? [...ids, user.id]
+                            : ids.filter((id) => id !== user.id)
+                          ).join(", "),
+                        );
+                      }}
+                    />
+                    {user.username}
+                  </label>
+                ))}
+            </div>
+          </fieldset>
+        ) : null}
+        <details>
+          <summary>直接编辑预留用户 ID</summary>
+          <label>
+            预留用户 ID（逗号分隔）
+            <input
+              value={allowed}
+              onChange={(e) => setAllowed(e.target.value)}
+            />
+          </label>
+        </details>
         <div className="form-row">
           <label>
             CPU 暂停阈值 %

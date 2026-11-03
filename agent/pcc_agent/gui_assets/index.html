@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PCC · Agent 配置</title>
+    <link rel="stylesheet" href="/theme.css" />
+    <link rel="stylesheet" href="/gui.css" />
+    <script defer src="/gui.js"></script>
+  </head>
+  <body>
+    <div class="layout">
+      <aside>
+        <a class="brand" href="/"
+          >◈ <strong>PCC <small>AGENT</small></strong></a
+        >
+        <nav aria-label="配置导航">
+          <a href="#connection">连接</a><a href="#resources">资源与共享</a
+          ><a href="#models">模型</a><a href="#files">文件</a>
+          <a href="#enrollment">注册</a>
+        </nav>
+        <small>FubukiHanasaki</small>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <h1>节点配置</h1>
+            <p id="config-path" class="muted"></p>
+          </div>
+          <span class="tag">仅本机访问</span>
+        </header>
+        <div id="notice" role="status" hidden></div>
+        <div id="error" role="alert" hidden></div>
+        <section class="metrics" aria-label="本机资源监测">
+          <article>
+            <div
+              class="ring"
+              id="cpu-ring"
+              role="meter"
+              aria-label="CPU 使用率"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <strong id="cpu-value">—</strong>
+            </div>
+            <div>
+              <h2>CPU</h2>
+              <p id="cpu-detail">等待采样</p>
+            </div>
+          </article>
+          <article>
+            <div
+              class="ring warm"
+              id="memory-ring"
+              role="meter"
+              aria-label="内存使用率"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <strong id="memory-value">—</strong>
+            </div>
+            <div>
+              <h2>内存</h2>
+              <p id="memory-detail">等待采样</p>
+            </div>
+          </article>
+          <article class="gpu-metric">
+            <h2>GPU 显存</h2>
+            <div id="gpu-detail">等待采样</div>
+          </article>
+        </section>
+        <p id="sample-time" class="muted small" aria-live="off"></p>
+        <form id="config-form">
+          <section class="panel" id="connection">
+            <h2>服务端连接</h2>
+            <div class="grid">
+              <label
+                >服务器地址<input
+                  id="server"
+                  type="url"
+                  required
+                  placeholder="https://compute.example.com" /></label
+              ><label>节点名称<input id="name" required maxlength="80" /></label
+              ><label
+                >私有 CA 文件（可选）<input
+                  id="ca_file"
+                  placeholder="公开可信证书无需填写"
+              /></label>
+            </div>
+            <div class="actions">
+              <button type="button" id="connect">测试已保存的连接</button>
+            </div>
+          </section>
+          <section class="panel" id="resources">
+            <h2>资源与共享</h2>
+            <div class="grid">
+              <label
+                >本地模式<select id="mode">
+                  <option value="maintenance">维护</option>
+                  <option value="shared">共享</option>
+                  <option value="private">私人</option>
+                  <option value="reserved">预留</option>
+                  <option value="offline">离线</option>
+                </select></label
+              ><label
+                >CPU 分配 核<input
+                  id="allocatable_cpu"
+                  type="number"
+                  required
+                  min="0.1"
+                  step="0.1" /></label
+              ><label
+                >内存分配 MB<input
+                  id="allocatable_memory_mb"
+                  type="number"
+                  required
+                  min="256" /></label
+              ><label
+                >显存分配 MB<input
+                  id="allocatable_vram_mb"
+                  type="number"
+                  required
+                  min="0" /></label
+              ><label
+                >CPU 暂停阈值 %<input
+                  id="max_cpu_load"
+                  type="number"
+                  min="1"
+                  max="100"
+                  required /></label
+              ><label
+                >内存暂停阈值 %<input
+                  id="max_memory_load"
+                  type="number"
+                  min="1"
+                  max="100"
+                  required /></label
+              ><label
+                >预留用户 ID<input
+                  id="allowed_users"
+                  placeholder="逗号分隔" /></label
+              ><label
+                >心跳间隔 秒<input
+                  id="heartbeat_seconds"
+                  type="number"
+                  min="1"
+                  max="30"
+                  required
+              /></label>
+            </div>
+            <div class="checks">
+              <label
+                ><input
+                  id="enable_compute"
+                  type="checkbox"
+                />启用受控计算</label
+              ><label
+                ><input
+                  id="enable_synthetic_ai"
+                  type="checkbox"
+                />启用合成协议测试</label
+              >
+            </div>
+            <label
+              >Windows 计算运行时<input
+                id="windows_worker_runtime"
+                placeholder="独立 embeddable Python 目录"
+            /></label>
+            <p class="hint">
+              本地模式与云端策略同时生效。开启计算仍须通过执行隔离探测。
+            </p>
+          </section>
+          <section class="panel" id="models">
+            <h2>模型</h2>
+            <details open>
+              <summary>Ollama</summary>
+              <div class="grid">
+                <label
+                  >Ollama 可执行文件<input
+                    id="ollama_executable"
+                    placeholder="完整路径" /></label
+                ><label>模型目录<input id="ollama_model_root" /></label
+                ><label
+                  >专用回环端口<input
+                    id="ollama_port"
+                    type="number"
+                    min="1024"
+                    max="65535"
+                    required /></label
+                ><label
+                  >GPU UUID（空为 CPU）<input
+                    id="ollama_gpu_device"
+                    placeholder="GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /></label
+                ><label
+                  >显存预算 MB<input
+                    id="ollama_vram_mb"
+                    type="number"
+                    min="0"
+                    required
+                /></label>
+              </div>
+              <label
+                >批准的模型 ID<textarea
+                  id="ollama_models"
+                  placeholder="每行一个，例如 qwen3:8b"
+                ></textarea>
+              </label>
+            </details>
+            <details>
+              <summary>ComfyUI</summary>
+              <div class="grid">
+                <label
+                  >Python 可执行文件<input
+                    id="comfyui_python"
+                    placeholder="完整路径" /></label
+                ><label
+                  >main.py 路径<input
+                    id="comfyui_script"
+                    placeholder="完整路径" /></label
+                ><label
+                  >专用回环端口<input
+                    id="comfyui_port"
+                    type="number"
+                    min="1024"
+                    max="65535"
+                    required /></label
+                ><label
+                  >GPU UUID（空为 CPU）<input id="comfyui_gpu_device"
+                /></label>
+              </div>
+              <div id="workflows"></div>
+              <button type="button" id="add-workflow">添加图片工作流</button>
+            </details>
+            <div class="grid">
+              <label
+                >服务空闲卸载 秒<input
+                  id="service_idle_seconds"
+                  type="number"
+                  min="1"
+                  required
+              /></label>
+            </div>
+            <p class="hint">
+              模型和工作流需预先安装。保存配置不会下载模型或启动推理。
+            </p>
+          </section>
+          <details class="panel" id="files">
+            <summary>文件路径与开发设置</summary>
+            <div class="grid">
+              <label>凭证文件<input id="credential_file" required /></label
+              ><label>工作目录<input id="work_root" required /></label>
+            </div>
+            <label class="check"
+              ><input type="checkbox" id="allow_development_http" />允许本机回环
+              HTTP 开发连接</label
+            >
+          </details>
+          <div class="save-bar">
+            <p class="hint" id="save-state">
+              连接与模型设置保存后需重启 Agent。
+            </p>
+            <div class="actions">
+              <button type="button" id="reload">重新加载</button
+              ><button class="primary" id="save" type="submit">保存配置</button>
+            </div>
+          </div>
+        </form>
+        <section class="panel" id="enrollment">
+          <h2>注册节点</h2>
+          <form id="register-form">
+            <label
+              >一次性注册令牌<input
+                id="token"
+                type="password"
+                maxlength="256"
+                required
+                autocomplete="off"
+            /></label>
+            <div class="actions">
+              <button id="register" type="submit">注册到已保存的服务端</button>
+            </div>
+          </form>
+          <p class="hint">令牌不保存。注册成功后仍需在终端启动 Agent。</p>
+        </section>
+        <details class="panel theme">
+          <summary>主题 · 5 + 2</summary>
+          <div id="theme-colors" class="grid"></div>
+          <button type="button" id="reset-theme">恢复默认</button>
+          <p class="hint" id="theme-warning" role="status"></p>
+        </details>
+        <footer>Personal Compute Cloud · FubukiHanasaki</footer>
+      </main>
+    </div>
+  </body>
+</html>

@@ -31,17 +31,32 @@ jobs:
         with: { version: "0.13.0", enable-cache: false }
       - run: uv sync --extra test --frozen
       - run: uv run alembic upgrade head
-      - run: uv run pytest
+      - run: uv run pytest -W error::pytest.PytestUnhandledThreadExceptionWarning -W error::pytest.PytestUnraisableExceptionWarning
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
       - run: python scripts/dev.py setup
       - run: npm run test:api --prefix web
       - run: npm run build --prefix web
+      - run: npm install --prefix tmp/ui-browser --cache tmp/npm-cache --no-save playwright@1.64.1
+      - run: node tmp/ui-browser/node_modules/playwright/cli.js install --with-deps chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: tmp/ui-browser/browsers
+      - run: node tests/web-ui.mjs
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: tmp/ui-browser/browsers
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-review
+          path: |
+            tmp/ui-qa/screenshots
+            tmp/ui-qa/visual-report.json
+          if-no-files-found: ignore
 
   agent-platforms:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -52,11 +67,16 @@ jobs:
         env:
           UV_PROJECT_ENVIRONMENT: tmp/venv
           UV_CACHE_DIR: tmp/uv-cache
-      - run: uv run --extra test pytest tests/test_agent_config.py
+      - run: uv run --extra test pytest tests/test_agent_config.py tests/test_agent_gui.py tests/test_update_scripts.py -W error::pytest.PytestUnhandledThreadExceptionWarning
         env:
           UV_PROJECT_ENVIRONMENT: tmp/venv
           UV_CACHE_DIR: tmp/uv-cache
           PYTHONDONTWRITEBYTECODE: 1
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./deploy/update-windows.ps1 --help
+      - if: runner.os != 'Windows'
+        run: sh deploy/update-linux.sh --help && sh deploy/update-macos.sh --help
       - if: runner.os == 'Windows'
         shell: pwsh
         run: |

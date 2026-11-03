@@ -25,6 +25,7 @@ export type Model = {
   online: boolean;
 };
 export type Template = {
+  public: boolean;
   id: string;
   name: string;
   kind: string;
