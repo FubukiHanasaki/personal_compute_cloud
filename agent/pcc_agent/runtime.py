@@ -19,6 +19,8 @@ class Agent:
         self.identity = json.loads(self.config.credential_file.read_text())
         self.client = httpx.Client(base_url=self.config.server.rstrip("/"), headers={"Authorization": "Bearer "+self.identity["credential"]}, timeout=35, follow_redirects=False, trust_env=False)
         self.isolation = isolation_capabilities()
+        from .services import ServiceManager
+        self.services = ServiceManager(self.config)
 
     def heartbeat(self):
         config = AgentConfig.load(self.config_path)
@@ -26,8 +28,10 @@ class Agent:
         config.server = self.config.server
         self.config = config
         caps = discover(config, self.isolation)
-        response = self.client.post("/internal/v1/nodes/heartbeat", json={"capabilities": caps, "policy": {"mode": config.mode, "allowed_users": config.allowed_users, "max_cpu_load": config.max_cpu_load, "max_memory_load": config.max_memory_load, "max_concurrency": 1}})
+        response = self.client.post("/internal/v1/nodes/heartbeat", json={"capabilities": caps, "policy": {"mode": config.mode, "allowed_users": config.allowed_users, "max_cpu_load": config.max_cpu_load, "max_memory_load": config.max_memory_load, "max_concurrency": 1}, "services": self.services.reports()})
         response.raise_for_status()
+        self.services.config = config
+        self.services.sync(response.json().get("services", []))
         return response.json()
 
     def run(self, once=False):
@@ -35,6 +39,7 @@ class Agent:
         while True:
             try:
                 self.heartbeat()
+                self.services.tick()
                 backoff = 1
                 if once:
                     return

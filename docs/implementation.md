@@ -39,3 +39,11 @@ Linux 实际使用 bubblewrap 的网络/PID/挂载命名空间、只读运行时
 ## P3 结果
 
 新增 0004 迁移、scrypt 密码、HttpOnly/SameSite 会话、CSRF、持久登录限流、密钥作用域/期限/吊销、Owner 用户授权界面所需 API、节点 Admin 资源授权及审计查询。管理权限由后端验证；普通用户只能访问自己的任务/工件。13 项测试通过，新增用户隔离、越权、Private 本地优先、Admin 授权、CSRF 和登录失败审计；SQLite 全量迁移及 Alembic 差异检查通过。实际生产 TLS 和 Windows/GPU 仍待外部环境验收。
+
+## P4 软件交付与待验收项
+
+新增 0005 服务定义/实例迁移、服务期望状态与心跳报告、模型注册、OpenAI Chat 严格字段子集、SSE、原生异步图片接口。Agent 提供受管 Ollama 进程、回环监听、本地模型允许列表、systemd 用户 scope 的 CPU/内存/进程数限制、独占服务资源锁、活动请求计数和空闲原生卸载后终止自有 scope。合成适配器显式标记 synthetic，不把测试图片或回显当成真实 AI。
+
+16 项测试通过，包括合成 Chat JSON/SSE 和 PNG 工件完整闭环、活动请求防卸载及 GPU 锁逻辑。Chat SSE 首版在推理完成后分块返回，尚非后端逐 token 转发。首版真实适配器为 Linux Ollama；Windows 在缺少等效隔离实现时拒绝该 Worker。尚未接入真实图像推理适配器。
+
+本机主机检查发现可用 NVIDIA GPU，但无模型与推理运行时。真实 GPU 加载→推理→卸载未验证，P4 的硬件完成标志仍未达到。后续交付界面和加固实现以便联调，不将其视为 MVP 已验收发布。

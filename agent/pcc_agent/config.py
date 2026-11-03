@@ -25,6 +25,7 @@ class AgentConfig(BaseModel):
     # Administrator-selected local managed backend settings; never sent by a user.
     ollama_executable: str = ""
     ollama_models: list[str] = []
+    ollama_model_root: Path = Path("tmp/ollama-models")
     ollama_port: int = Field(default=11435, ge=1024, le=65535)
     ollama_vram_mb: int = Field(default=0, ge=0)
     service_idle_seconds: int = Field(default=300, ge=1)
@@ -45,7 +46,7 @@ class AgentConfig(BaseModel):
         with open(path, "rb") as file:
             config = cls(**tomllib.load(file))
         root = Path(path).resolve().parent
-        for key in ("credential_file", "work_root"):
+        for key in ("credential_file", "work_root", "ollama_model_root"):
             value = getattr(config, key)
             if not value.is_absolute():
                 setattr(config, key, root / value)

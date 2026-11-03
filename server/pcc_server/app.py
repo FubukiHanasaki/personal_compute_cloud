@@ -48,4 +48,8 @@ def create_app(settings=None):
     app.include_router(jobs_router)
     from .auth import router as auth_router
     app.include_router(auth_router)
+    from .services import router as services_router
+    from .ai import router as ai_router
+    app.include_router(services_router)
+    app.include_router(ai_router)
     return app

@@ -161,3 +161,24 @@ class LoginBucket(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     resets_at: Mapped[float] = mapped_column(Float)
+
+
+class ServiceDefinition(Base):
+    __tablename__ = "service_definitions"
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    type: Mapped[str] = mapped_column(String(40))
+    allowed_config: Mapped[dict] = mapped_column(JSON)
+    idle_policy: Mapped[dict] = mapped_column(JSON)
+
+
+class ServiceInstance(Base):
+    __tablename__ = "service_instances"
+    __table_args__ = (UniqueConstraint("definition_id", "node_id"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    definition_id: Mapped[str] = mapped_column(ForeignKey("service_definitions.id"))
+    node_id: Mapped[str] = mapped_column(ForeignKey("nodes.id"))
+    state: Mapped[str] = mapped_column(String(24), default="stopped")
+    desired_state: Mapped[str] = mapped_column(String(24), default="auto")
+    active_requests: Mapped[int] = mapped_column(Integer, default=0)
+    last_active: Mapped[float] = mapped_column(Float, default=time.time)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)

@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from pydantic import Field
 from sqlalchemy import func, select
 from .db import get_db, transaction
-from .models import Artifact, Job, JobAttempt, JobEvent, Node, TaskTemplate, uid
+from .models import Artifact, Job, JobAttempt, JobEvent, Node, TaskTemplate, ServiceInstance, ServiceDefinition, uid
 from .schemas import Resources, Strict
 from .security import admin, audit, can_manage, current_node, current_user, digest, require_scope
 from .storage import LocalStorage
@@ -145,7 +145,7 @@ def policy_allows(policy, node, job):
     return True
 
 
-def eligible(node, job, template, settings, used, active_count):
+def eligible(node, job, template, settings, used, active_count, reclaimable=None):
     caps = node.capabilities
     if node.disabled or time.time()-node.last_seen>settings.heartbeat_timeout or template.worker not in caps.get("workers", []):
         return False
@@ -158,7 +158,7 @@ def eligible(node, job, template, settings, used, active_count):
             return False
     for key, value in job.requirements.items():
         capacity = min(caps.get("allocatable", {}).get(key, 0), caps.get("physical", {}).get(key, 0))
-        available = caps.get("available", {}).get(key, 0)
+        available = min(caps.get("physical", {}).get(key, 0), caps.get("available", {}).get(key, 0)+(reclaimable or {}).get(node.id, {}).get(key, 0))
         if capacity-used.get(key, 0)<value or available<value:
             return False
     return True
@@ -253,13 +253,22 @@ def claim(body: Claim, request: Request, node=Depends(current_node), db=Depends(
                 for k in used[a.node_id]:
                     used[a.node_id][k] += active_job.requirements[k]
                 counts[a.node_id] += 1
+            reclaimable = {}
+            for instance in db.scalars(select(ServiceInstance).where(ServiceInstance.active_requests == 0, ServiceInstance.state.in_(["idle", "ready"]))):
+                resources = db.get(ServiceDefinition, instance.definition_id).allowed_config["resources"]
+                budget = reclaimable.setdefault(instance.node_id, {"cpu": 0, "memory_mb": 0, "vram_mb": 0})
+                for key in budget:
+                    budget[key] += resources[key]
             for job in db.scalars(select(Job).where(Job.status == "queued").order_by(Job.created_at)):
                 template = db.get(TaskTemplate, job.template_id)
-                if not template.enabled or not eligible(node, job, template, settings, used[node.id], counts[node.id]):
+                instance = db.scalar(select(ServiceInstance).where(ServiceInstance.node_id == node.id, ServiceInstance.definition_id == template.id)) if template.kind.startswith("ai.") else None
+                if instance and instance.desired_state == "stopped":
+                    continue
+                if not template.enabled or not eligible(node, job, template, settings, used[node.id], counts[node.id], reclaimable):
                     continue
                 # Private/reserved nodes participate only when no eligible shared node exists.
                 if node.policy.get("mode") != "shared" or node.local_policy.get("mode") != "shared":
-                    if any(n.id != node.id and n.policy.get("mode") == "shared" and n.local_policy.get("mode") == "shared" and eligible(n, job, template, settings, used[n.id], counts[n.id]) for n in db.scalars(select(Node))):
+                    if any(n.id != node.id and n.policy.get("mode") == "shared" and n.local_policy.get("mode") == "shared" and eligible(n, job, template, settings, used[n.id], counts[n.id], reclaimable) for n in db.scalars(select(Node))):
                         continue
                 now = time.time()
                 attempt = JobAttempt(id=uid(), job_id=job.id, node_id=node.id, claim_id=body.claim_id, lease_token_hash="", lease_expires_at=min(now+settings.lease_seconds, now+job.timeout_seconds), deadline=now+job.timeout_seconds)

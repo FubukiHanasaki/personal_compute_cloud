@@ -22,6 +22,7 @@ def execute(agent, payload):
     base = "/internal/v1/jobs/"+job_id
     lease = {"attempt_id": payload["attempt_id"], "lease_token": payload["lease_token"]}
     worker = None
+    synthetic_service = None
     journal = agent.config.work_root / "active-attempt.json"
     # Persistent record aids manual reconciliation; never assume an old child stopped.
     fd = os.open(journal, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -36,7 +37,14 @@ def execute(agent, payload):
         if renewed["cancel_requested"]:
             raise RuntimeError("Cancellation requested")
         expires = renewed["lease_expires_at"]
-        worker = SandboxedWorker(agent.config, payload)
+        if payload["template"]["worker"].startswith("ollama:"):
+            from .services import InferenceWorker
+            worker = InferenceWorker(agent.services, payload)
+        else:
+            if payload["template"]["worker"].startswith("synthetic.") and hasattr(agent, "services"):
+                synthetic_service = agent.services.acquire(payload["template"]["id"])
+                agent.services.ready(synthetic_service)
+            worker = SandboxedWorker(agent.config, payload)
         post(agent, base+"/events", {**lease, "sequence": 0, "message": "受控 Worker 已启动", "progress": 0.1})
         next_renew = time.monotonic()+2
         next_heartbeat = time.monotonic()+agent.config.heartbeat_seconds
@@ -54,7 +62,7 @@ def execute(agent, payload):
                 next_renew = time.monotonic()+2
             time.sleep(0.1)
         output = worker.result()
-        worker.stop()
+        # Completed inference may stay loaded until its idle policy expires.
         renewed = post(agent, base+"/renew", lease)
         if renewed["cancel_requested"]:
             raise RuntimeError("Cancellation requested")
@@ -78,5 +86,7 @@ def execute(agent, payload):
     finally:
         if worker:
             worker.close()
+        if synthetic_service:
+            agent.services.release(synthetic_service)
         if confirmed:
             journal.unlink(missing_ok=True)

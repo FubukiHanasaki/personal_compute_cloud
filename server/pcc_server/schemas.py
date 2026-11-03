@@ -38,9 +38,18 @@ class Register(Strict):
     os: Literal["Linux", "Windows"]
 
 
+class ServiceReport(Strict):
+    definition_id: str = Field(max_length=80)
+    state: Literal["stopped", "starting", "ready", "idle", "stopping", "error"]
+    active_requests: int = Field(ge=0, le=32)
+    last_active: float = Field(ge=0)
+    error: str | None = Field(default=None, max_length=300)
+
+
 class Heartbeat(Strict):
     capabilities: Capabilities
     policy: Policy
+    services: list[ServiceReport] = Field(default_factory=list, max_length=32)
 
 
 class IssueToken(Strict):

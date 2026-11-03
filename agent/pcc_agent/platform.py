@@ -29,11 +29,21 @@ def isolation_capabilities():
     return []
 
 
+def managed_isolation_available():
+    if platform.system() != "Linux" or not shutil.which("systemd-run"):
+        return False
+    try:
+        subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=128M", "-p", "CPUQuota=100%", "-p", "TasksMax=16", "/usr/bin/true"], capture_output=True, timeout=5, check=True)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def discover(config, isolation=None):
     vm = psutil.virtual_memory()
     gpus = gpu_metrics()
-    total_vram = sum(g["total_mb"] for g in gpus)
-    available_vram = sum(g["total_mb"]-g["used_mb"] for g in gpus)
+    total_vram = max((g["total_mb"] for g in gpus), default=0)
+    available_vram = max((g["total_mb"]-g["used_mb"] for g in gpus), default=0)
     physical = {"cpu": psutil.cpu_count() or 1, "memory_mb": vm.total//2**20, "vram_mb": total_vram}
     allocatable = {"cpu": min(physical["cpu"], config.allocatable_cpu), "memory_mb": min(physical["memory_mb"], config.allocatable_memory_mb), "vram_mb": min(total_vram, config.allocatable_vram_mb)}
     isolation = isolation if isolation is not None else isolation_capabilities()
@@ -42,7 +52,7 @@ def discover(config, isolation=None):
         workers.append("compute.stats")
     if config.enable_synthetic_ai and isolation:
         workers.extend(["synthetic.chat", "synthetic.image"])
-    if config.ollama_executable and config.ollama_models:
+    if config.ollama_executable and config.ollama_models and managed_isolation_available():
         workers.extend("ollama:"+m for m in config.ollama_models)
     return {"physical": physical, "allocatable": allocatable,
             "available": {"cpu": physical["cpu"], "memory_mb": vm.available//2**20, "vram_mb": available_vram},

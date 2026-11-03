@@ -2,7 +2,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from .db import get_db, transaction
-from .models import Node, NodeCredential, RegistrationToken
+from .models import Node, NodeCredential, RegistrationToken, ServiceDefinition, ServiceInstance
 from .schemas import Heartbeat, IssueToken, Policy, Register
 from .security import admin, audit, can_manage, current_node, current_user, digest, require_scope, token
 
@@ -55,7 +55,28 @@ def heartbeat(body: Heartbeat, request: Request, node=Depends(current_node), db=
         node.capabilities = caps
         node.local_policy = body.policy.model_dump()
         node.last_seen = time.time()
-    return {"node_id": node.id, "policy": node.policy, "server_time": time.time()}
+        definitions = db.scalars(select(ServiceDefinition)).all()
+        for definition in definitions:
+            if definition.allowed_config["worker"] not in caps["workers"]:
+                continue
+            instance = db.scalar(select(ServiceInstance).where(ServiceInstance.definition_id == definition.id, ServiceInstance.node_id == node.id))
+            if not instance:
+                instance = ServiceInstance(definition_id=definition.id, node_id=node.id)
+                db.add(instance)
+                db.flush()
+            report = next((r for r in body.services if r.definition_id == definition.id), None)
+            if report:
+                if instance.state != report.state:
+                    audit(db, node.id, "service."+report.state, instance.id, "error" if report.state == "error" else "success")
+                instance.state = report.state
+                instance.active_requests = report.active_requests
+                instance.last_active = min(report.last_active, time.time())
+                instance.error = report.error
+        commands = [{"definition_id": i.definition_id, "desired_state": i.desired_state,
+                     "config": db.get(ServiceDefinition, i.definition_id).allowed_config,
+                     "idle_seconds": db.get(ServiceDefinition, i.definition_id).idle_policy["idle_seconds"]}
+                    for i in db.scalars(select(ServiceInstance).where(ServiceInstance.node_id == node.id))]
+    return {"node_id": node.id, "policy": node.policy, "server_time": time.time(), "services": commands}
 
 
 @router.get("/api/v1/nodes")
