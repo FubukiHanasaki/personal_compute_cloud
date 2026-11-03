@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import socket
+import subprocess
 import pytest
 from pcc_agent.config import AgentConfig
 from pcc_agent.windows_sandbox import WindowsWorker, probe, cleanup_stale_profiles
@@ -48,6 +49,28 @@ def test_native_appcontainer_compute_and_profile_cleanup(tmp_path):
     assert probe(config(tmp_path))
 
 
+def test_native_runtime_owner_access_survives_appcontainer_cleanup(tmp_path):
+    cfg = config(tmp_path)
+    command = [
+        str(cfg.windows_worker_runtime / "python.exe"),
+        "-I",
+        "-B",
+        "-c",
+        "import json, statistics",
+    ]
+    subprocess.run(command, check=True, timeout=10, capture_output=True)
+    try:
+        worker = WindowsWorker(cfg, payload())
+        try:
+            assert worker.result()["result"]["sum"] == 12
+        finally:
+            worker.close()
+    finally:
+        # Runs even if AppContainer creation/result failed: distinguish host
+        # owner access damage from a sandbox-only loader failure.
+        subprocess.run(command, check=True, timeout=10, capture_output=True)
+
+
 def test_native_appcontainer_blocks_private_files_and_loopback(monkeypatch, tmp_path):
     import pcc_agent.windows_sandbox as sandbox
 
@@ -56,8 +79,6 @@ def test_native_appcontainer_blocks_private_files_and_loopback(monkeypatch, tmp_
     secret = tmp_path / "private-secret"
     secret.write_text("private-test-only")
     # Explicitly prevent ALL APPLICATION PACKAGES or inherited broad ACLs.
-    import subprocess
-
     sid = (
         subprocess.check_output(["whoami", "/user", "/fo", "csv", "/nh"], text=True)
         .strip()

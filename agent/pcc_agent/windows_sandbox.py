@@ -8,6 +8,7 @@ required; the Agent's interpreter and credentials are never granted to workers.
 import ctypes as C
 import io
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -23,6 +24,47 @@ DWORD = C.c_uint32
 HANDLE = C.c_void_p
 SIZE = C.c_size_t
 BOOL = C.c_int32
+log = logging.getLogger("pcc.agent.windows")
+
+
+def worker_environment(root):
+    """A complete startup environment without the Agent's private profile."""
+    root = Path(root)
+    for name in ("localappdata", "appdata"):
+        (root / name).mkdir(exist_ok=True)
+    system = Path(os.environ["SystemRoot"])
+    return {
+        "SystemRoot": str(system),
+        "WINDIR": str(system),
+        "PATH": str(system / "System32"),
+        "USERPROFILE": str(root),
+        "LOCALAPPDATA": str(root / "localappdata"),
+        "APPDATA": str(root / "appdata"),
+        "TEMP": str(root),
+        "TMP": str(root),
+    }
+
+
+def runtime_acl_args(runtime, sid, *, remove=False):
+    # Never grant/remove a user SID or the shared ALL APPLICATION PACKAGES SID.
+    if not re.fullmatch(r"S-1-15-2-(?:\d+-){2,}\d+", sid):
+        raise ValueError("Expected a private AppContainer SID")
+    # The dedicated runtime is flat. Apply RX directly to every file and its
+    # root, without directory-only inheritance flags on file ACEs.
+    return [
+        str(runtime),
+        "/remove:g" if remove else "/grant",
+        f"*{sid}" if remove else f"*{sid}:RX",
+        "/T",
+        "/Q",
+    ]
+
+
+def worker_exit_error(code):
+    message = f"Windows worker exited with status 0x{code & 0xFFFFFFFF:08X}"
+    if code & 0xFFFFFFFF == 0xC0000022:
+        message += "; check runtime EXE/DLL/ZIP access and AppLocker/WDAC policy"
+    return RuntimeError(message)
 
 
 class BasicLimits(C.Structure):
@@ -323,7 +365,7 @@ class WindowsWorker:
                 },
                 stream,
             )
-        self.acl(self.runtime, "/grant", f"*{self.sid_text}:(OI)(CI)RX", "/T", "/Q")
+        self.acl(*runtime_acl_args(self.runtime, self.sid_text))
         self.acl(self.root, "/grant", f"*{self.sid_text}:(OI)(CI)M", "/Q")
         self.acl(self.root, "/setintegritylevel", "(OI)(CI)L", "/Q")
         shutil.copyfile(Path(__file__).with_name("worker.py"), self.root / "worker.py")
@@ -403,15 +445,10 @@ class WindowsWorker:
             executable = str(self.runtime / "python.exe")
             command = C.create_unicode_buffer(
                 subprocess.list2cmdline(
-                    [executable, "-I", "-B", str(self.root / "worker.py")]
+                    [executable, "-I", "-B", "-X", "utf8", str(self.root / "worker.py")]
                 )
             )
-            env = {
-                "SystemRoot": os.environ["SystemRoot"],
-                "TEMP": str(self.root),
-                "TMP": str(self.root),
-                "PYTHONUTF8": "1",
-            }
+            env = worker_environment(self.root)
             environment = C.create_unicode_buffer(
                 "\0".join(f"{key}={value}" for key, value in sorted(env.items()))
                 + "\0\0"
@@ -452,9 +489,15 @@ class WindowsWorker:
                 self.kernel.CloseHandle(process.thread)
             self.kernel.DeleteProcThreadAttributeList(attributes)
         data = json.dumps({"worker": worker, "input": payload["input"]}).encode("utf-8")
-        with os.fdopen(stdin_write, "wb") as stream:
-            self.pipes.remove(stdin_write)
-            stream.write(data)
+        try:
+            with os.fdopen(stdin_write, "wb") as stream:
+                self.pipes.remove(stdin_write)
+                stream.write(data)
+        except OSError as exc:
+            code = self.poll()
+            if code is not None:
+                raise worker_exit_error(code) from exc
+            raise
         if time.monotonic() >= startup_deadline:
             raise RuntimeError("Lease expired during Windows worker startup")
         # The Agent's lease guard takes over after construction; renewed leases
@@ -527,8 +570,9 @@ class WindowsWorker:
                     time.sleep(0.02)
 
     def result(self):
-        if self.wait() != 0:
-            raise RuntimeError("Windows worker failed or exceeded a resource limit")
+        code = self.wait()
+        if code != 0:
+            raise worker_exit_error(code)
         for thread in self.threads:
             thread.join(timeout=10)
             if thread.is_alive():
@@ -563,7 +607,7 @@ class WindowsWorker:
                         self.kernel.CloseHandle(handle)
                 self.handle = self.job = None
             if self.sid_text:
-                self.acl(self.runtime, "/remove:g", f"*{self.sid_text}", "/T", "/Q")
+                self.acl(*runtime_acl_args(self.runtime, self.sid_text, remove=True))
                 self.sid_text = None
             if self.profile:
                 result = self.userenv.DeleteAppContainerProfile(self.profile)
@@ -629,7 +673,7 @@ def cleanup_stale_profiles(config):
             advapi.FreeSid(derived)
         executable = Path(os.environ["SystemRoot"]) / "System32/icacls.exe"
         subprocess.run(
-            [str(executable), str(runtime), "/remove:g", f"*{sid}", "/T", "/Q"],
+            [str(executable), *runtime_acl_args(runtime, sid, remove=True)],
             check=True,
             capture_output=True,
             timeout=30,
@@ -672,5 +716,6 @@ def probe(config):
         # An unknown surviving probe is not an unavailable capability. Abort
         # startup so the OS closes this Agent's kill-on-close Job handles.
         raise
-    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError):
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
+        log.warning("Windows compute probe unavailable: %s", exc)
         return False

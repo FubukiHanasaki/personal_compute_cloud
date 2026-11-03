@@ -19,6 +19,8 @@ tmp/agent-venv/bin/pcc-agent run --config agent.toml
 
 ## Windows
 
+关于运行时 ACL、`LOCALAPPDATA`、`0xC0000022` 和 Job 清理的最新修复与未决项，见 [Windows 启动问题复查](windows-startup-review.md)。
+
 PowerShell 使用专用**标准用户**从 checkout 运行：
 
 ```powershell

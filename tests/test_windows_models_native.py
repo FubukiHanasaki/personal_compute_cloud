@@ -8,10 +8,10 @@ import socket
 import subprocess
 import sys
 import time
-import psutil
 import pytest
 from pcc_agent.config import AgentConfig
 from pcc_agent.windows_managed import WindowsManagedProcess, active_job, probe
+from pcc_agent.windows_sandbox import api, checked
 
 pytestmark = pytest.mark.skipif(
     os.name != "nt", reason="Native Windows model Jobs required"
@@ -40,21 +40,30 @@ def test_native_managed_job_probe_limits_and_orphan_cleanup(tmp_path):
         ),
     ]
     process = WindowsManagedProcess({"cpu": 1, "memory_mb": 512})
-    with (tmp_path / "job.log").open("ab") as output:
-        try:
+    child_handle = None
+    try:
+        with (tmp_path / "job.log").open("ab") as output:
             process.start(command, environment(), output)
             assert process.wait(timeout=10) == 0
             child = json.loads(pid_file.read_text())
             assert child in process.process_ids() and active_job(process.name)
+            child_handle = checked(process.kernel.OpenProcess(0x101000, False, child))
             rate = (C.c_uint32 * 2)()
             assert process.kernel.QueryInformationJobObject(
                 process.job, 15, rate, C.sizeof(rate), None
             )
             assert rate[0] == 5 and 0 < rate[1] <= 10000
-        finally:
+        process.close()
+        # A PID can remain queryable while a handle retains the exited object.
+        # Wait on this exact child object, which also avoids PID reuse races.
+        assert process.kernel.WaitForSingleObject(child_handle, 10000) == 0
+        assert not active_job(process.name)
+    finally:
+        try:
             process.close()
-    assert not active_job(process.name)
-    assert not psutil.pid_exists(child)
+        finally:
+            if child_handle:
+                checked(process.kernel.CloseHandle(child_handle))
 
 
 def test_native_managed_job_rejects_memory_overrun(tmp_path):
@@ -73,25 +82,48 @@ def test_native_managed_job_rejects_memory_overrun(tmp_path):
 
 def test_native_agent_exit_kills_owned_model_job(tmp_path):
     record = tmp_path / "spawn.json"
+    release = tmp_path / "release"
     root = str(Path(__file__).resolve().parents[1] / "agent")
     script = (
-        "import json,os,sys; from pathlib import Path; "
+        "import json,os,sys,time; from pathlib import Path; "
         f"sys.path.insert(0,{root!r}); "
         "from pcc_agent.windows_managed import WindowsManagedProcess; "
         "p=WindowsManagedProcess({'cpu':1,'memory_mb':256}); "
         "log=open(os.devnull,'ab'); "
         "p.start([sys.executable,'-I','-B','-c','import time;time.sleep(60)'],"
         "{'SystemRoot':os.environ['SystemRoot']},log); "
-        f"Path({str(record)!r}).write_text(json.dumps({{'pid':p.pid,'job':p.name}})); "
+        f"record=Path({str(record)!r}); staging=record.with_suffix('.pending'); "
+        "staging.write_text(json.dumps({'pid':p.pid,'job':p.name})); staging.replace(record); "
+        "until=time.monotonic()+30\n"
+        f"while not Path({str(release)!r}).exists():\n"
+        " if time.monotonic()>=until: os._exit(2)\n"
+        " time.sleep(0.02)\n"
         "os._exit(0)"
     )
-    subprocess.run([sys.executable, "-I", "-B", "-c", script], check=True, timeout=20)
-    identity = json.loads(record.read_text())
-    until = time.monotonic() + 5
-    while psutil.pid_exists(identity["pid"]) and time.monotonic() < until:
-        time.sleep(0.05)
-    assert not psutil.pid_exists(identity["pid"])
-    assert not active_job(identity["job"])
+    kernel, _, _ = api()
+    controller = subprocess.Popen([sys.executable, "-I", "-B", "-c", script])
+    child_handle = None
+    try:
+        until = time.monotonic() + 10
+        while not record.exists():
+            assert controller.poll() is None, "Model controller exited before handshake"
+            assert time.monotonic() < until, "Model controller startup timed out"
+            time.sleep(0.02)
+        identity = json.loads(record.read_text())
+        child_handle = checked(kernel.OpenProcess(0x101000, False, identity["pid"]))
+        assert active_job(identity["job"])
+        release.touch()
+        assert controller.wait(timeout=20) == 0
+        assert kernel.WaitForSingleObject(child_handle, 10000) == 0
+        assert not active_job(identity["job"])
+    finally:
+        try:
+            if controller.poll() is None:
+                controller.terminate()
+                controller.wait(timeout=10)
+        finally:
+            if child_handle:
+                checked(kernel.CloseHandle(child_handle))
 
 
 FAKE_SERVER = r"""
