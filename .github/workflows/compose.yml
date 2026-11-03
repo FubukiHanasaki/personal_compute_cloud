@@ -1,5 +1,7 @@
 name: compose-acceptance
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   deployment:
     runs-on: ubuntu-latest
@@ -10,6 +12,7 @@ jobs:
       COMPOSE_ENV_FILES: tmp/compose-qa/.env
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }
       - name: Prepare isolated configuration
         run: |
           mkdir -p tmp/compose-qa

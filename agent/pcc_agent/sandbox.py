@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from .platform import isolation_capabilities
+from .errors import WorkerStopUnconfirmed
 
 
 class SandboxedWorker:
@@ -18,6 +19,19 @@ class SandboxedWorker:
         return super().__new__(cls)
 
     def __init__(self, config, payload):
+        self.directory = self.output = self.stderr = self.process = None
+        try:
+            self._start(config, payload)
+        except BaseException:
+            try:
+                self.close()
+            except Exception as exc:
+                raise WorkerStopUnconfirmed(
+                    "Linux worker cleanup requires reconciliation"
+                ) from exc
+            raise
+
+    def _start(self, config, payload):
         if "linux-bwrap-rlimit" not in isolation_capabilities():
             raise RuntimeError("Required isolation is unavailable; execution refused")
         if payload["template"]["worker"] not in {
@@ -100,8 +114,13 @@ class SandboxedWorker:
         return self.process.poll()
 
     def stop(self):
+        if self.process is None:
+            return
         if self.process.poll() is None:
-            os.killpg(self.process.pid, signal.SIGKILL)
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         self.process.wait(timeout=10)
 
     def result(self):
@@ -112,6 +131,13 @@ class SandboxedWorker:
 
     def close(self):
         self.stop()
-        self.output.close()
-        self.stderr.close()
-        self.directory.cleanup()
+        if self.process and self.process.stdin:
+            try:
+                self.process.stdin.close()
+            except BrokenPipeError:
+                pass  # Stop was confirmed above; buffered stdin need not flush.
+        for stream in (self.output, self.stderr):
+            if stream:
+                stream.close()
+        if self.directory:
+            self.directory.cleanup()

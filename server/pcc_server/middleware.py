@@ -18,7 +18,9 @@ class BodyLimitMiddleware:
             declared = int(headers.get(b"content-length", b"0"))
         except ValueError:
             declared = self.max_bytes + 1
-        chunks, size = [], 0
+        # A list of arbitrarily tiny chunks can exhaust memory long before the
+        # byte limit. Keep buffering cost proportional to actual body bytes.
+        body, size = bytearray(), 0
         while declared <= self.max_bytes:
             event = await receive()
             if event["type"] == "http.disconnect":
@@ -27,7 +29,7 @@ class BodyLimitMiddleware:
             size += len(data)
             if size > self.max_bytes:
                 break
-            chunks.append(data)
+            body.extend(data)
             if not event.get("more_body"):
                 sent = False
 
@@ -37,7 +39,7 @@ class BodyLimitMiddleware:
                         sent = True
                         return {
                             "type": "http.request",
-                            "body": b"".join(chunks),
+                            "body": bytes(body),
                             "more_body": False,
                         }
                     return await receive()

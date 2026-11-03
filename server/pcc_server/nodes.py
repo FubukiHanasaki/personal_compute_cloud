@@ -55,6 +55,7 @@ def issue_token(
 ):
     raw = token("reg_")
     with transaction(db):
+        user = admin(request, current_user(request, db))
         row = RegistrationToken(
             hash=digest(raw, request.app.state.settings),
             expires_at=time.time() + body.expires_seconds,
@@ -78,6 +79,13 @@ def register(body: Register, request: Request, db=Depends(get_db)):
         )
         if not row or row.used_at or row.expires_at <= time.time():
             raise HTTPException(401, "注册令牌已过期或已使用")
+        issuer = db.get(User, row.issued_by)
+        if (
+            not issuer
+            or issuer.status != "active"
+            or issuer.role not in {"owner", "admin"}
+        ):
+            raise HTTPException(401, "注册令牌签发者已失去授权")
         row.used_at = time.time()
         owner = db.scalar(select(User).where(User.role == "owner"))
         if not owner:

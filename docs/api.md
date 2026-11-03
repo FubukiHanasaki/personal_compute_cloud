@@ -32,7 +32,9 @@ curl "$PCC_URL/api/v1/jobs/$PCC_JOB_ID/artifacts" -H "Authorization: Bearer $PCC
 
 `POST /api/v1/auth/login` 返回会话 Cookie 与 csrf_token；后续 Cookie 身份的 POST/PUT 操作必须传 `X-CSRF-Token`。`GET /api/v1/auth/me` 恢复当前用户与 CSRF，浏览器不使用 localStorage 保存长期密钥。
 
-`POST /api/v1/keys` 输入 `scopes`、`expires_seconds`（60 秒–90 天），只返回一次明文。允许作用域：jobs:read、jobs:write、models:read、nodes:read、admin。作用域不提升用户角色。`GET /api/v1/keys` 只返回自身元数据；`POST /api/v1/keys/{id}/revoke` 撤销凭证。
+`POST /api/v1/keys` 输入 `scopes`、`expires_seconds`（60 秒–90 天），只返回一次明文。允许作用域：jobs:read、jobs:write、models:read、nodes:read、admin。作用域不提升用户角色。`GET /api/v1/keys` 只返回自身元数据；`POST /api/v1/keys/{id}/revoke` 撤销凭证。以上密钥管理操作要求网页登录会话（写入仍需 CSRF）或 Owner/Admin 的 admin Key；只有任务、模型或节点读写作用域的程序 Key 无权列出、创建或撤销账号密钥。
+
+禁用账号会撤销其全部现有 API Key、网页登录会话及尚未使用的节点注册令牌。重新启用账号不会恢复这些旧凭证，需要重新登录或签发；注册时还会独立检查令牌签发者当前是否仍具备管理员权限。
 
 Owner 通过 `/api/v1/admin/users` 创建 User/Admin，通过 PUT 更新 status 和明确的资源 grants（nodes/view_nodes/templates/jobs）；Admin 只能操作授予的资源。Owner 本机遗失浏览器会话时可用 `pcc-server bootstrap-key` 在密码校验后生成一小时管理密钥，不能绕过密码。
 

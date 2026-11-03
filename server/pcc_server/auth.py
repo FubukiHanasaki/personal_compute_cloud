@@ -3,9 +3,9 @@ from typing import Literal
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from .db import get_db, transaction
-from .models import APIKey, AuditEvent, LoginBucket, User, WebSession
+from .models import APIKey, AuditEvent, LoginBucket, RegistrationToken, User, WebSession
 from .schemas import Strict
 from .security import (
     SCOPES,
@@ -14,6 +14,7 @@ from .security import (
     current_user,
     digest,
     hash_password,
+    key_manager,
     token,
     verify_password,
 )
@@ -167,22 +168,22 @@ def change_password(
 
 @router.post("/api/v1/keys", status_code=201)
 def create_key(
-    body: KeyCreate, request: Request, user=Depends(current_user), db=Depends(get_db)
+    body: KeyCreate, request: Request, user=Depends(key_manager), db=Depends(get_db)
 ):
-    if not set(body.scopes) <= SCOPES or (
-        "admin" in body.scopes and user.role not in {"owner", "admin"}
-    ):
-        raise HTTPException(403, "无权签发此作用域")
-    if (
-        not set(body.scopes) <= set(request.state.scopes)
-        and "admin" not in request.state.scopes
-    ):
-        raise HTTPException(403, "不能扩大当前凭证权限")
-    # A read-only key must not be able to mint an admin or write key.
-    if "admin" not in request.state.scopes and "jobs:write" not in request.state.scopes:
-        raise HTTPException(403, "当前凭证不能创建密钥")
     raw = token("pcc_")
     with transaction(db):
+        # Recheck after taking the mutation lock, so a concurrent account/key
+        # revocation cannot be followed by minting a fresh credential.
+        user = key_manager(request, current_user(request, db))
+        if not set(body.scopes) <= SCOPES or (
+            "admin" in body.scopes and user.role not in {"owner", "admin"}
+        ):
+            raise HTTPException(403, "无权签发此作用域")
+        if (
+            not set(body.scopes) <= set(request.state.scopes)
+            and "admin" not in request.state.scopes
+        ):
+            raise HTTPException(403, "不能扩大当前凭证权限")
         key = APIKey(
             user_id=user.id,
             hash=digest(raw, request.app.state.settings),
@@ -204,7 +205,7 @@ def create_key(
 def keys(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    user=Depends(current_user),
+    user=Depends(key_manager),
     db=Depends(get_db),
 ):
     rows = db.scalars(
@@ -228,8 +229,11 @@ def keys(
 
 
 @router.post("/api/v1/keys/{key_id}/revoke", status_code=204)
-def revoke_key(key_id: str, user=Depends(current_user), db=Depends(get_db)):
+def revoke_key(
+    key_id: str, request: Request, user=Depends(key_manager), db=Depends(get_db)
+):
     with transaction(db):
+        user = key_manager(request, current_user(request, db))
         key = db.get(APIKey, key_id)
         if not key or (key.user_id != user.id and user.role != "owner"):
             raise HTTPException(404, "密钥不存在或无权限")
@@ -285,6 +289,20 @@ def update_user(
         row.grants = body.grants.model_dump()
         if row.status == "disabled":
             db.execute(delete(WebSession).where(WebSession.user_id == row.id))
+            now = time.time()
+            db.execute(
+                update(APIKey)
+                .where(APIKey.user_id == row.id, APIKey.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            db.execute(
+                update(RegistrationToken)
+                .where(
+                    RegistrationToken.issued_by == row.id,
+                    RegistrationToken.used_at.is_(None),
+                )
+                .values(expires_at=now)
+            )
         audit(db, user.id, "user.update", row.id)
     return user_view(row)
 

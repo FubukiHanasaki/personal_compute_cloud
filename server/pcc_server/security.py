@@ -73,7 +73,8 @@ def current_user(request: Request, db=Depends(get_db)):
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             expected = digest("csrf:" + raw, settings)
             if not hmac.compare_digest(
-                request.headers.get("x-csrf-token", ""), expected
+                request.headers.get("x-csrf-token", "").encode("utf-8"),
+                expected.encode("ascii"),
             ):
                 raise HTTPException(403, "CSRF 校验失败")
         request.state.session_id = session.id
@@ -96,6 +97,15 @@ def admin(request: Request, user=Depends(current_user)):
     require_scope(request, "admin")
     if user.role not in {"owner", "admin"}:
         raise HTTPException(403, "需要管理员权限")
+    return user
+
+
+def key_manager(request: Request, user=Depends(current_user)):
+    """Account credential management is outside task/model API scopes."""
+    if not getattr(request.state, "session_id", None) and not (
+        "admin" in request.state.scopes and user.role in {"owner", "admin"}
+    ):
+        raise HTTPException(403, "密钥管理需要网页登录会话或管理员凭证")
     return user
 
 

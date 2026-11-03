@@ -2,6 +2,8 @@
 
 作者：Fubuki。
 
+2026-11-03 的第二轮静态安全复查、修复和扫描范围见 [安全复查记录](security-review-v0.4.md)。该轮未执行运行时测试。
+
 ## 边界
 
 MVP 的隔离执行仅面向已批准、受限的模板，不等同于允许互联网上的不可信用户执行任意代码。将来开放第三方代码前必须独立威胁建模和沙箱评审。当前 API 不接受 shell、Python 源码、本地主机路径、privileged 容器、Docker socket 或用户自带运行环境。
@@ -11,6 +13,8 @@ Linux compute 要求实际可用 bubblewrap，不具备则拒绝。CPU 使用 af
 Ollama 为节点管理员批准的本地二进制和模型，不接受云端可执行路径。Linux 使用用户 systemd scope 的 CPUQuota/MemoryMax/TasksMax；scope 名随机生成，停止只针对 PCC 自己的 scope。父进程结束不代表子进程停止；若整个 scope 的回收无法确认，保留 backend 并隔离该节点的调度额度，等待核对。GPU 预算需要模型验证，软件检查不提供硬件显存分区。不得用超出节点可分配额度的模型。
 
 控制面使用非超级用户 PostgreSQL 账号；密码 scrypt，API/节点/租约/会话令牌使用加密哈希而非明文保存。注册/初次密钥只显示一次。生产需独立随机 PCC_SECRET 与数据库密码。API 端实施所有者授权，前端隐藏按钮不作为安全边界。TLS、Secure/HttpOnly/SameSite Cookie、CSRF、登录限流、请求体和任务配额均为分层措施。
+
+任务/模型/节点作用域不包含账号密钥管理权；密钥管理使用网页登录会话或管理员 admin Key。账号禁用会一并撤销已有 Key、会话及待使用注册令牌，重新启用不会复活旧凭证。Worker 构造失败时必须先确认停止再报告 Server；Windows 和 Linux 都将未确认清理的异常传递给 Agent，保留恢复日志。
 
 状态转换经数据库事务与 PostgreSQL 全局 advisory lock 串行化，有效 attempt 另有唯一索引。当前适合个人规模，吞吐瓶颈应先量测事务锁而不是引入消息系统。重启保留持久任务；过期租约占用资源直到确认停止，宁可暂停排队也不隐式并行重做。
 
