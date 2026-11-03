@@ -22,8 +22,14 @@ def sha256(path):
 
 def pg_env(url):
     parsed = make_url(url)
-    if not parsed.drivername.startswith("postgresql") or parsed.query:
-        raise ValueError("Use a PostgreSQL URL without query options")
+    if (
+        not parsed.drivername.startswith("postgresql")
+        or parsed.query
+        or not all((parsed.host, parsed.username, parsed.database))
+    ):
+        raise ValueError(
+            "Use an explicit PostgreSQL host/user/database URL without query options"
+        )
     return {
         **os.environ,
         "PGHOST": parsed.host or "localhost",
@@ -177,11 +183,13 @@ def restore(
 ):
     if not quiesced:
         raise ValueError("Stop all Server writers and confirm quiesced before restore")
+    environment = pg_env(database_url)
     source, storage_root = Path(source), Path(storage_root)
     verify(source)
     if storage_root.exists() and any(storage_root.iterdir()):
         raise ValueError("Restore requires a new empty artifact directory")
-    engine = create_engine(database_url)
+    parsed = make_url(database_url)
+    engine = create_engine(parsed.set(port=parsed.port or 5432))
     try:
         with engine.connect() as connection:
             count = connection.scalar(
@@ -204,10 +212,10 @@ def restore(
             "--no-owner",
             "--no-acl",
             "--dbname",
-            pg_env(database_url)["PGDATABASE"],
+            environment["PGDATABASE"],
             str(source / "pcc.dump"),
         ],
-        env=pg_env(database_url),
+        env=environment,
         check=True,
         capture_output=True,
     )

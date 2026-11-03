@@ -44,6 +44,39 @@ def test_win64_job_and_startup_abi_sizes():
     assert ctypes.sizeof(StartupEx) == 112
 
 
+def test_credential_dacl_precedes_secret_write_and_uses_sid_not_display_name(
+    monkeypatch, tmp_path
+):
+    import os
+    from types import SimpleNamespace
+    import pcc_agent.platform as module
+
+    path = tmp_path / "credential.json"
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[0].endswith("whoami.exe"):
+            return SimpleNamespace(stdout=b'"domain\\\xffname","S-1-5-21-123"\r\n')
+        assert path.read_bytes() == b"", (
+            "Do not write a credential before its ACL is restricted"
+        )
+        assert command[-2] == "*S-1-5-21-123:F"
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(
+            **{**vars(os), "name": "nt", "environ": {"SystemRoot": str(tmp_path)}}
+        ),
+    )
+    monkeypatch.setattr(module.subprocess, "run", run)
+    module.save_credential(path, {"credential": "test-only"})
+    assert "test-only" in path.read_text()
+    assert len(calls) == 2
+
+
 def test_windows_scheduler_accepts_approved_isolation_but_not_worker_name_alone(env):
     from conftest import register_node
     from test_jobs import template, submit, claim

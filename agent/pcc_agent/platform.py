@@ -157,10 +157,13 @@ def secure_windows_path(path):
         [str(system / "whoami.exe"), "/user", "/fo", "csv", "/nh"],
         check=True,
         capture_output=True,
-        text=True,
         timeout=10,
     )
-    sid = next(csv.reader(io.StringIO(identity.stdout)))[-1]
+    # Account names may use a different Windows code page; only the ASCII SID
+    # is needed, so undecodable display-name bytes must not break enrollment.
+    sid = next(
+        csv.reader(io.StringIO(identity.stdout.decode("utf-8", errors="replace")))
+    )[-1]
     if not re.fullmatch(r"S-1-[0-9-]+", sid):
         raise RuntimeError("Unable to determine runtime account SID")
     permission = "(OI)(CI)F" if path.is_dir() else "F"

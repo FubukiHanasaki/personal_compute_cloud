@@ -46,6 +46,10 @@ def test_restore_rejects_duplicates_and_size_limit(tmp_path):
 
 
 def test_snapshot_requires_quiescence_and_never_overwrites(tmp_path):
+    from pcc_server.backup import pg_env
+
+    with pytest.raises(ValueError, match="explicit"):
+        pg_env("postgresql:///ambiguous")
     with pytest.raises(ValueError, match="quiesced"):
         create(tmp_path / "backup", tmp_path, "postgresql://unused")
     with pytest.raises(FileExistsError):
