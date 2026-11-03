@@ -3,6 +3,7 @@ import argparse
 import getpass
 import logging
 import platform
+import ssl
 from pathlib import Path
 import httpx
 from .config import AgentConfig
@@ -12,7 +13,8 @@ from .platform import save_credential
 def main():
     parser = argparse.ArgumentParser(description="PCC Agent · Fubuki")
     parser.add_argument(
-        "command", choices=["init", "register", "run", "check", "reconcile"]
+        "command",
+        choices=["init", "register", "run", "check", "reconcile", "cleanup-windows"],
     )
     parser.add_argument("--config", default="agent.toml")
     parser.add_argument("--once", action="store_true")
@@ -40,9 +42,22 @@ def main():
                     "Agent must run as a standard non-administrator account"
                 )
     config = AgentConfig.load(args.config)
+    if args.command == "cleanup-windows":
+        if not args.confirm_stopped:
+            raise SystemExit("Stop the owning Agent, then use --confirm-stopped")
+        from .windows_sandbox import cleanup_stale_profiles
+
+        print(f"Removed {cleanup_stale_profiles(config)} stopped Windows profiles")
+        return
     if args.command == "register":
         raw = getpass.getpass("One-time registration token: ")
-        with httpx.Client(timeout=20, trust_env=False) as client:
+        with httpx.Client(
+            timeout=20,
+            trust_env=False,
+            verify=ssl.create_default_context(cafile=str(config.ca_file))
+            if config.ca_file
+            else True,
+        ) as client:
             response = client.post(
                 config.server.rstrip("/") + "/internal/v1/nodes/register",
                 json={"token": raw, "name": config.name, "os": platform.system()},

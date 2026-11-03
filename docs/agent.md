@@ -30,7 +30,25 @@ notepad agent.toml
 
 脚本将凭证所在 tmp 目录 ACL 收紧到当前账号。可用任务计划程序以“当前用户登录时”运行上述命令，取消“使用最高权限运行”，设置失败重试。当前版本提供清晰的安装和前台运行流程；尚未提供原生 Windows Service 包装器，不宣称其已验收。
 
-Windows 目前支持注册、心跳、资源监控和策略；未完成受限 token/Job Objects 等价执行层，因此不报告 compute/Ollama 能力。不会回退到宿主机全权限执行。需要 Windows 实机补充 A02 证据。
+Windows 已增加 AppContainer + Job Object 执行层，供受控统计和显式合成测试 Worker 使用。实际安装/隔离验收仍须在 Windows 执行，Ubuntu 上的结构与协议测试不能代替该证据。准备独立的官方 embeddable Python 运行时：
+
+```powershell
+powershell -File deploy\prepare-windows-worker.ps1
+# 在 agent.toml 设置绝对路径，不能复用 Agent venv 或放置凭证：
+# windows_worker_runtime = 'C:\PCC\tmp\windows-worker-runtime'
+# work_root = 'C:\PCC\tmp\agent'
+# enable_compute = true
+& tmp\agent-venv\Scripts\pcc-agent.exe check --config agent.toml
+# 应报告 windows-appcontainer-job 与 compute.stats，否则保持拒绝执行。
+$env:PCC_WINDOWS_RUNTIME = (Resolve-Path tmp/windows-worker-runtime).Path
+& tmp\agent-venv\Scripts\python.exe -m pytest tests/test_windows_native.py -q
+```
+
+安装脚本校验 Python 官方包的固定 SHA256。每次执行采用唯一 AppContainer SID、零网络 capability、仅显式运行时/任务目录权限、三条标准 I/O 句柄白名单；进程在创建时原子归入 Job，限制 CPU、内存、单进程、输出和墙钟时间，Agent 退出会触发 kill-on-close。凭证在写入前收紧 DACL；本地工作目录也只授权当前账号。AppContainer 的 OS 安全配置由 Windows 管理，正常停止后删除；运行时、任务文件和日志均留在 tmp。独立运行时只能包含 vendor 文件，不能包含 Agent 代码、凭证、用户主目录或配置。
+
+Windows 上的 Ollama/ComfyUI 受管服务尚不提供，因为此版本的推理服务限制依赖 Linux 用户 cgroup；Windows 节点仍可通过上述受控计算后端参与调度。模型不是节点接入的前提。实现依据：[AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)、[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)、[Python 包来源与哈希](https://www.python.org/downloads/release/python-31316/)。
+
+Agent 被强制终止时，Job 的 kill-on-close 会停止 Worker，OS profile/只读 runtime ACE 可能需要清理。先停止原 Agent，再运行 `pcc-agent cleanup-windows --config agent.toml --confirm-stopped`；工具核对控制进程创建时间、独立推导的包 SID 和本地 runtime，只移除该工作目录中已停止的 PCC profile。活动任务日志仍须按 reconcile 流程核对，清理 profile 不会擅自重试任务。
 
 ## 配置示例
 
@@ -38,6 +56,8 @@ Windows 目前支持注册、心跳、资源监控和策略；未完成受限 to
 # Author: Fubuki
 version = 1
 server = "https://compute.example.com"
+# 私有 CA 可显式指定 ca_file；默认使用系统信任，绝不关闭证书校验。
+# ca_file = "tmp/private-root-ca.pem"
 name = "my-node"
 credential_file = "tmp/agent-credential.json"
 work_root = "tmp/agent"

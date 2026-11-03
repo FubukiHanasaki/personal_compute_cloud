@@ -2,7 +2,7 @@
 
 作者：**Fubuki**。自托管个人计算云：FastAPI / PostgreSQL 控制面、仅出站 HTTPS 的 Python Agent、中文 React 管理台与 Portal、Caddy + Docker Compose。
 
-已实现节点注册/监控/策略、任务租约和失败核对、Linux 隔离统计模板、工件、用户/API Key/会话/CSRF、服务生命周期、Chat/SSE、异步图片协议及管理界面。ComfyUI 图片适配器已提供；实际图片权重、Windows 执行隔离和完整生产部署验收仍待完成；**此版本不是 A01–A14 全部验收通过的 MVP 发布**。GPU 实测状态见[验收矩阵](docs/acceptance.md)。
+已实现节点注册/监控/策略、任务租约和失败核对、Linux 隔离统计模板、工件、用户/API Key/会话/CSRF、服务生命周期、Chat/SSE、异步图片协议及管理界面。Windows AppContainer/Job Object 执行层和 ComfyUI 图片适配器已提供；Windows 原生实测和完整生产部署验收仍待完成；**此版本不是 A01–A14 全部验收通过的 MVP 发布**。GPU 实测状态见[验收矩阵](docs/acceptance.md)。
 
 ## 本地启动
 

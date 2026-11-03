@@ -3,6 +3,9 @@ import os
 import platform
 import shutil
 import subprocess
+import csv
+import io
+import re
 import psutil
 
 
@@ -35,7 +38,11 @@ def gpu_metrics():
         return []
 
 
-def isolation_capabilities():
+def isolation_capabilities(config=None):
+    if platform.system() == "Windows" and config is not None:
+        from .windows_sandbox import probe
+
+        return ["windows-appcontainer-job"] if probe(config) else []
     # Linux bubblewrap must actually work with this host's namespace policy.
     executable = shutil.which("bwrap") if platform.system() == "Linux" else None
     if executable:
@@ -104,7 +111,7 @@ def discover(config, isolation=None):
         "memory_mb": min(physical["memory_mb"], config.allocatable_memory_mb),
         "vram_mb": min(total_vram, config.allocatable_vram_mb),
     }
-    isolation = isolation if isolation is not None else isolation_capabilities()
+    isolation = isolation if isolation is not None else isolation_capabilities(config)
     workers = []
     if config.enable_compute and isolation:
         workers.append("compute.stats")
@@ -140,9 +147,43 @@ def discover(config, isolation=None):
     }
 
 
+def secure_windows_path(path):
+    if os.name != "nt":
+        return
+    from pathlib import Path
+
+    system = Path(os.environ["SystemRoot"]) / "System32"
+    identity = subprocess.run(
+        [str(system / "whoami.exe"), "/user", "/fo", "csv", "/nh"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    sid = next(csv.reader(io.StringIO(identity.stdout)))[-1]
+    if not re.fullmatch(r"S-1-[0-9-]+", sid):
+        raise RuntimeError("Unable to determine runtime account SID")
+    permission = "(OI)(CI)F" if path.is_dir() else "F"
+    subprocess.run(
+        [
+            str(system / "icacls.exe"),
+            str(path),
+            "/inheritance:r",
+            "/grant:r",
+            f"*{sid}:{permission}",
+            "/Q",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+
+
 def save_credential(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     # O_EXCL prevents overwriting an enrolled identity or following a symlink.
     fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     with os.fdopen(fd, "w") as file:
+        # Apply the DACL before writing any credential bytes on Windows.
+        secure_windows_path(path)
         json.dump(data, file)

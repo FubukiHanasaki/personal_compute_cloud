@@ -3,10 +3,11 @@ import logging
 import random
 import time
 import uuid
+import ssl
 from pathlib import Path
 import httpx
 from .config import AgentConfig
-from .platform import discover, isolation_capabilities
+from .platform import discover, isolation_capabilities, secure_windows_path
 
 log = logging.getLogger("pcc.agent")
 
@@ -16,6 +17,7 @@ class Agent:
         self.config_path = Path(config_path)
         self.config = AgentConfig.load(config_path)
         self.config.work_root.mkdir(parents=True, exist_ok=True)
+        secure_windows_path(self.config.work_root)
         self.identity = json.loads(self.config.credential_file.read_text())
         self.client = httpx.Client(
             base_url=self.config.server.rstrip("/"),
@@ -23,8 +25,11 @@ class Agent:
             timeout=35,
             follow_redirects=False,
             trust_env=False,
+            verify=ssl.create_default_context(cafile=str(self.config.ca_file))
+            if self.config.ca_file
+            else True,
         )
-        self.isolation = isolation_capabilities()
+        self.isolation = isolation_capabilities(self.config)
         from .services import ServiceManager
 
         self.services = ServiceManager(self.config)

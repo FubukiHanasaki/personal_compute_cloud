@@ -6,7 +6,7 @@
 
 MVP 的隔离执行仅面向已批准、受限的模板，不等同于允许互联网上的不可信用户执行任意代码。将来开放第三方代码前必须独立威胁建模和沙箱评审。当前 API 不接受 shell、Python 源码、本地主机路径、privileged 容器、Docker socket 或用户自带运行环境。
 
-Linux compute 要求实际可用 bubblewrap，不具备则拒绝。CPU 使用 affinity 与总 CPU 时间上限，内存使用地址空间限制，运行时间由独立守卫限制，网络/文件访问由命名空间隔离；Worker 只读运行时和批准的脚本，不挂载用户主目录、配置或节点凭证。Windows 监控支持不代表 Windows 执行隔离已交付。
+Linux compute 要求实际可用 bubblewrap，不具备则拒绝。CPU 使用 affinity 与总 CPU 时间上限，内存使用地址空间限制，运行时间由独立守卫限制，网络/文件访问由命名空间隔离；Worker 只读运行时和批准的脚本，不挂载用户主目录、配置或节点凭证。Windows 使用独立运行时、无网络 capability 的 AppContainer 与 Job Object，先实际计算探测再报告能力；原生安全测试在 Windows CI 中提供，但未在当前 Ubuntu 环境运行，不声称两种隔离机制已经等价验收。
 
 Ollama 为节点管理员批准的本地二进制和模型，不接受云端可执行路径。Linux 使用用户 systemd scope 的 CPUQuota/MemoryMax/TasksMax；scope 名随机生成，停止只针对 PCC 自己的 scope。父进程结束不代表子进程停止；若整个 scope 的回收无法确认，保留 backend 并隔离该节点的调度额度，等待核对。GPU 预算需要模型验证，软件检查不提供硬件显存分区。不得用超出节点可分配额度的模型。
 

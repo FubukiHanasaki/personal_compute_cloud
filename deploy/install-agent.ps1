@@ -8,6 +8,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Python 3.12+ is required' }
 & tmp\agent-venv\Scripts\python.exe -m pip install --cache-dir tmp\pip-cache .
 if ($LASTEXITCODE -ne 0) { throw 'Installation failed' }
 & tmp\agent-venv\Scripts\pcc-agent.exe init --config agent.toml
+if ($LASTEXITCODE -ne 0) { throw 'Agent configuration initialization failed' }
 # Remove inherited broad read access from future credential directory.
-icacls tmp /inheritance:r /grant:r "${env:USERNAME}:(OI)(CI)F" | Out-Null
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+icacls tmp /inheritance:r /grant:r "*${sid}:(OI)(CI)F" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Cannot secure Agent directory ACL' }
 Write-Host 'Edit agent.toml, register, then run under this account. See docs/agent.md.'

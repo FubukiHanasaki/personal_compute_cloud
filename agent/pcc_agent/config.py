@@ -30,6 +30,8 @@ class AgentConfig(BaseModel):
     enable_compute: bool = False
     enable_synthetic_ai: bool = False
     allow_development_http: bool = False
+    ca_file: Path | None = None
+    windows_worker_runtime: Path | None = None
     # Administrator-selected local managed backend settings; never sent by a user.
     ollama_executable: str = ""
     ollama_models: list[str] = []
@@ -83,6 +85,10 @@ class AgentConfig(BaseModel):
         for key in ("credential_file", "work_root", "ollama_model_root"):
             value = getattr(config, key)
             if not value.is_absolute():
+                setattr(config, key, root / value)
+        for key in ("ca_file", "windows_worker_runtime"):
+            value = getattr(config, key)
+            if value is not None and not value.is_absolute():
                 setattr(config, key, root / value)
         for workflow in config.comfyui_workflows.values():
             if not workflow.file.is_absolute():

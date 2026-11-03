@@ -10,6 +10,13 @@ from .platform import isolation_capabilities
 
 
 class SandboxedWorker:
+    def __new__(cls, config, payload):
+        if os.name == "nt":
+            from .windows_sandbox import WindowsWorker
+
+            return WindowsWorker(config, payload)
+        return super().__new__(cls)
+
     def __init__(self, config, payload):
         if "linux-bwrap-rlimit" not in isolation_capabilities():
             raise RuntimeError("Required isolation is unavailable; execution refused")

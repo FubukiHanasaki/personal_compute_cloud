@@ -239,7 +239,9 @@ def eligible(node, job, template, settings, used, active_count, reclaimable=None
         "compute.stats",
         "synthetic.chat",
         "synthetic.image",
-    } and "linux-bwrap-rlimit" not in caps.get("isolation", []):
+    } and not {"linux-bwrap-rlimit", "windows-appcontainer-job"}.intersection(
+        caps.get("isolation", [])
+    ):
         return False
     for policy in (node.policy, node.local_policy):
         if not policy_allows(policy, node, job) or active_count >= policy.get(
