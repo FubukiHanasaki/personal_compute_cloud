@@ -50,7 +50,7 @@ curl "$PCC_URL/v1/chat/completions" -H "Authorization: Bearer $PCC_API_KEY" \
 
 支持字段仅 model、messages、stream；messages 支持 system/user/assistant + 字符串 content。不支持 tools、temperature、max_tokens、图像消息等字段，明确返回 422。SSE 事件为 `data: {...}`，以 `[DONE]` 结束；等待阶段仍执行持久化任务。首版完成推理后分块 SSE，不声称原生 token streaming。
 
-`POST /api/v1/images/generations` 输入 model、prompt、size（256x256 / 512x512），返回异步 Job，按任务 API 查询/下载。可选 comfyui:<model> 连接本地批准的真实图片工作流，尚待实际权重验收；synthetic.image 只验证协议。
+`POST /api/v1/images/generations` 输入 model、prompt、size（256x256 / 512x512），返回异步 Job，按任务 API 查询/下载。可选 comfyui:<model> 连接本地批准的真实图片工作流；synthetic.image 只验证协议。历史 Linux 真实权重验证与当前 Windows 待验收范围见[验收矩阵](acceptance.md)及[模型复查记录](windows-models-review.md)。
 
 ## Agent 协议与人工核对
 

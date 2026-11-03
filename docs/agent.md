@@ -110,15 +110,16 @@ pcc-agent reconcile --config agent.toml --confirm-stopped
 
 若凭证已被吊销，由 Owner 在服务端人工核对 API 记录停止证据。非幂等任务默认不自动重试。不要通过删除 journal 强行恢复，以免发生并行副作用。
 
-## ComfyUI 图片适配器（Linux）
+## ComfyUI 图片适配器（Windows / Linux）
 
-实现了真实本地 ComfyUI 队列/历史/结果协议，当前只完成自动化协议测试，尚未在实际图片权重上验收。节点管理员预先安装 ComfyUI、PyTorch 与合法权重，导出 API 格式工作流，再配置：
+通过本地 ComfyUI 队列、历史与结果接口执行批准的工作流。历史 Linux 真实 GPU 生成与卸载证据见[验收矩阵](acceptance.md)；Windows 已实现受管模型流程，原生执行和真实模型仍待实机验收，最新修改的模拟与静态检查见[复查记录](windows-models-review.md)。节点管理员预先安装 ComfyUI、PyTorch 与合法权重，导出 API 格式工作流，再配置（以下路径为 Linux 示例，Windows 路径见[模型配置](windows-models.md)）：
 
 ```toml
 comfyui_python = "/absolute/path/to/comfy-venv/bin/python"
 comfyui_script = "/absolute/path/to/ComfyUI/main.py"
 comfyui_port = 8189
-comfyui_gpu_device = "LOCAL_GPU_UUID"
+# 默认 CPU；GPU 模式填写 nvidia-smi 返回的完整 GPU UUID。
+comfyui_gpu_device = ""
 
 [comfyui_workflows.my-image-model]
 file = "approved-image-workflow.json"
@@ -129,6 +130,6 @@ min_vram_mb = 4096
 
 工作流必须由管理员审查，节点类型只允许 CheckpointLoaderSimple、CLIPTextEncode、EmptyLatentImage、KSampler、VAEDecode、SaveImage。启动禁用所有 custom nodes；普通用户不能上传/替换图，不接入付费 API 节点。仅替换 CLIP 文本和有界 latent 尺寸（batch=1）。模型名为本地 workflow 映射名称，云端使用 `kind=ai.image`、`worker=comfyui:my-image-model`、`model=my-image-model` 和对应资源预算。
 
-实例仍使用 Linux 用户 cgroup 与回环监听，只管理自己的进程。单次请求下载有界 PNG，路径只接受批准的输出形式；PCC 专用临时输出目录在服务停止后清理。空闲先调用原生 `/free`，再终止自己的 scope；不会向现存 ComfyUI 服务发送全局终止。
+实例采用 Linux 用户 cgroup 或 Windows Job Object 与回环监听，只管理自己的进程。单次请求等待整个工作流完成后下载有界 PNG，路径只接受批准的输出形式；随后清理本次历史和 PCC 专用临时输出，服务停止时回收整个 staging。空闲先调用原生 `/free`，再终止自己的 scope / Job；不会向现存 ComfyUI 服务发送全局终止。
 
 协议依据 [ComfyUI 官方示例](https://github.com/comfyanonymous/ComfyUI/blob/master/script_examples/basic_api_example.py) 与[服务器接口](https://github.com/comfyanonymous/ComfyUI/blob/master/server.py)。上线前需在管理员实际版本、工作流、模型与 GPU 上完成一次生成和卸载验收。
