@@ -4,7 +4,7 @@ recursive-include server *.py
 recursive-include migrations *.py *.mako
 recursive-include tests *.py *.mjs
 recursive-include scripts *.py
-recursive-include deploy *.sh *.ps1 *.service Dockerfile Caddyfile
+recursive-include deploy *.sh *.ps1 *.service *.toml *.json Dockerfile Caddyfile
 recursive-include docs *.md *.json
 include web/package.json web/package-lock.json web/tsconfig.json web/index.html
 recursive-include web/src *.ts *.tsx *.css

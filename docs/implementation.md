@@ -77,3 +77,7 @@ TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过�
 上述阶段记录为原交付快照。本轮补齐 Windows AppContainer/Job Object 执行、独立运行时和 SID ACL、停止后 profile 清理，增加实际 TLS/重启持久性测试以及可执行的流式备份/单事务恢复；完成 PostgreSQL 清空恢复演练。ComfyUI 已使用真实 SD1.5 权重完成 GPU 推理与普通用户 HTTPS 图片任务、授权下载和空闲卸载，修复重复启停与显存池预算问题。
 
 最终 PostgreSQL 59 项通过/5 项 Windows 跳过，SQLite 58 项通过/6 项跳过，前端传输 3 项通过，类型/生产构建、Python 分发包及部署配置检查通过。Windows 原生和 Compose 验收 CI 已提供但未触发；生产 Docker/域名/NAT、Windows 实机和此前暂跳过的浏览器视觉仍需外部验收。当前状态与命令以 [后续核验](completion-v0.4.md)和[验收矩阵](acceptance.md)为准。
+
+## Windows 受管模型 · 2026-11-03
+
+补齐 Windows Ollama/ComfyUI 的 Job Object 进程树控制、资源限制、端口归属校验、服务生命周期和恢复记录；提取跨平台受管进程接口。提供标准账号配置、CPU/NVIDIA 模式、批准的工作流和原生测试入口。Ubuntu 定向模拟/契约检查 29 项通过、7 项 Windows 用例跳过，wheel/sdist 和静态检查通过；不将这些结果当作 Windows 真实模型验收。配置、升级和实机验证流程见 [Windows 模型支持](windows-models.md)。

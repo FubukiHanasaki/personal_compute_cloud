@@ -10,7 +10,7 @@ MVP 的隔离执行仅面向已批准、受限的模板，不等同于允许互�
 
 Linux compute 要求实际可用 bubblewrap，不具备则拒绝。CPU 使用 affinity 与总 CPU 时间上限，内存使用地址空间限制，运行时间由独立守卫限制，网络/文件访问由命名空间隔离；Worker 只读运行时和批准的脚本，不挂载用户主目录、配置或节点凭证。Windows 使用独立运行时、无网络 capability 的 AppContainer 与 Job Object，先实际计算探测再报告能力；原生安全测试在 Windows CI 中提供，但未在当前 Ubuntu 环境运行，不声称两种隔离机制已经等价验收。
 
-Ollama 为节点管理员批准的本地二进制和模型，不接受云端可执行路径。Linux 使用用户 systemd scope 的 CPUQuota/MemoryMax/TasksMax；scope 名随机生成，停止只针对 PCC 自己的 scope。父进程结束不代表子进程停止；若整个 scope 的回收无法确认，保留 backend 并隔离该节点的调度额度，等待核对。GPU 预算需要模型验证，软件检查不提供硬件显存分区。不得用超出节点可分配额度的模型。
+Ollama/ComfyUI 为节点管理员批准的本地运行时和模型，不接受云端可执行路径。Linux 使用用户 systemd scope 的 CPUQuota/MemoryMax/TasksMax；Windows 使用标准账号下的随机命名 Job Object，创建进程时原子加入，限制 CPU 比例、进程树提交内存、活动进程数和 kill-on-close，并按 Job 进程核对回环监听器。scope/Job 名随机生成，停止只针对 PCC 自己的资源域。父进程结束不代表子进程停止；若整个进程树的回收无法确认，保留 backend 并隔离该节点的调度额度，等待核对。模型运行时仍处于节点账号信任边界，不能把资源限制当作对恶意模型代码的文件/网络沙箱。GPU 预算需要模型验证，软件检查不提供硬件显存分区。不得用超出节点可分配额度的模型。
 
 控制面使用非超级用户 PostgreSQL 账号；密码 scrypt，API/节点/租约/会话令牌使用加密哈希而非明文保存。注册/初次密钥只显示一次。生产需独立随机 PCC_SECRET 与数据库密码。API 端实施所有者授权，前端隐藏按钮不作为安全边界。TLS、Secure/HttpOnly/SameSite Cookie、CSRF、登录限流、请求体和任务配额均为分层措施。
 

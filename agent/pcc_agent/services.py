@@ -4,21 +4,22 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
-import signal
-import shutil
 import uuid
 import socket
-import subprocess
 import threading
 import time
 import httpx
+from .managed_process import ManagedProcess, environment
 
 
 def check_loopback_port(port):
     with socket.socket() as probe:
         # A stopped HTTP server can leave TIME_WAIT sockets. Reusing those is
         # safe; a live listener still prevents this bind (no SO_REUSEPORT).
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == "nt":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(("127.0.0.1", port))
 
 
@@ -35,17 +36,21 @@ class OllamaBackend:
         )
         self.logfile = None
         self.unit = "pcc-worker-" + uuid.uuid4().hex
+        self.controller = ManagedProcess(resources, self.unit)
+
+    def recovery_record(self):
+        return self.controller.recovery_record()
+
+    def _require_listener(self, port):
+        if not self.controller.listener_ready(port):
+            raise RuntimeError("Managed loopback listener is unavailable or not owned")
 
     def start(self):
-        if os.name != "posix":
-            raise RuntimeError(
-                "Managed Ollama currently requires Linux resource isolation; Windows refuses execution"
-            )
         from .platform import managed_isolation_available
 
         if not managed_isolation_available():
             raise RuntimeError(
-                "User cgroup CPU/memory limits are unavailable; inference refused"
+                "Managed process CPU/memory limits are unavailable; inference refused"
             )
         executable = Path(self.config.ollama_executable)
         if (
@@ -69,51 +74,31 @@ class OllamaBackend:
             self.config.ollama_model_root.mkdir(parents=True, exist_ok=True)
             self.logfile = (self.config.work_root / "ollama.log").open("ab")
             env = {
-                "XDG_RUNTIME_DIR": os.environ.get(
-                    "XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"
-                ),
-                "DBUS_SESSION_BUS_ADDRESS": os.environ.get(
-                    "DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus"
-                ),
-                "PATH": "/usr/bin:/bin",
-                "HOME": str(self.config.work_root),
+                **environment(self.config, executable),
                 "OLLAMA_HOST": f"127.0.0.1:{self.config.ollama_port}",
                 "OLLAMA_MODELS": str(self.config.ollama_model_root),
                 "OLLAMA_KEEP_ALIVE": "-1",
                 "OLLAMA_NUM_PARALLEL": "1",
                 "OLLAMA_MAX_LOADED_MODELS": "1",
                 "OLLAMA_NO_CLOUD": "1",
-                "CUDA_VISIBLE_DEVICES": self.config.ollama_gpu_device,
-                "HIP_VISIBLE_DEVICES": "",
-                "ROCR_VISIBLE_DEVICES": "",
+                "CUDA_VISIBLE_DEVICES": self.config.ollama_gpu_device or "-1",
+                "HIP_VISIBLE_DEVICES": "-1",
+                "ROCR_VISIBLE_DEVICES": "-1",
+                "OLLAMA_VULKAN": "0",
+                "GGML_VK_VISIBLE_DEVICES": "-1",
             }
-            command = [
-                shutil.which("systemd-run"),
-                "--user",
-                "--scope",
-                "--quiet",
-                "--unit",
-                self.unit,
-                "-p",
-                f"MemoryMax={self.resources['memory_mb']}M",
-                "-p",
-                f"CPUQuota={int(self.resources['cpu'] * 100)}%",
-                "-p",
-                "TasksMax=256",
-                str(executable),
-                "serve",
-            ]
-            self.process = subprocess.Popen(
-                command,
-                stdout=self.logfile,
-                stderr=self.logfile,
+            self.process = self.controller.start(
+                [str(executable), "serve"],
                 env=env,
-                start_new_session=True,
+                stdout=self.logfile,
             )
         until = time.monotonic() + 20
         while time.monotonic() < until:
             if self.cancelled.is_set() or self.process.poll() is not None:
                 raise RuntimeError("Managed backend stopped during startup")
+            if not self.controller.listener_ready(self.config.ollama_port):
+                time.sleep(0.1)
+                continue
             try:
                 response = self.client.get("/api/version", timeout=1)
                 response.raise_for_status()
@@ -123,6 +108,7 @@ class OllamaBackend:
         else:
             raise RuntimeError("Managed backend health check timed out")
         # Explicit load also verifies that the administrator has pre-installed the model.
+        self._require_listener(self.config.ollama_port)
         response = self.client.post(
             "/api/generate",
             json={"model": self.model, "prompt": "", "stream": False, "keep_alive": -1},
@@ -131,11 +117,17 @@ class OllamaBackend:
         self.check_vram()
 
     def check_vram(self):
+        self._require_listener(self.config.ollama_port)
         response = self.client.get("/api/ps", timeout=3)
         response.raise_for_status()
         used = sum(
             int(m.get("size_vram", 0)) for m in response.json().get("models", [])
         )
+        if self.config.ollama_gpu_device and used <= 0:
+            self.stop()
+            raise RuntimeError(
+                "Configured Ollama GPU is not in use; CPU fallback refused"
+            )
         if used > self.resources["vram_mb"] * 2**20:
             self.stop()
             raise RuntimeError("Managed model exceeded its approved VRAM reservation")
@@ -143,6 +135,7 @@ class OllamaBackend:
     def chat(self, messages):
         if self.cancelled.is_set():
             raise RuntimeError("Backend stopped")
+        self._require_listener(self.config.ollama_port)
         response = self.client.post(
             "/api/chat",
             json={
@@ -161,6 +154,7 @@ class OllamaBackend:
 
     def unload(self):
         if self.process and self.process.poll() is None:
+            self._require_listener(self.config.ollama_port)
             response = self.client.post(
                 "/api/generate",
                 json={
@@ -176,32 +170,7 @@ class OllamaBackend:
     def stop(self):
         self.cancelled.set()
         with self.lock:
-            if self.process is not None:
-                # Scope cleanup also covers orphaned children after parent exit.
-                subprocess.run(
-                    [
-                        "systemctl",
-                        "--user",
-                        "kill",
-                        "--signal=KILL",
-                        self.unit + ".scope",
-                    ],
-                    capture_output=True,
-                    timeout=10,
-                )
-                if self.process.poll() is None:
-                    try:
-                        os.killpg(self.process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                self.process.wait(timeout=10)
-                result = subprocess.run(
-                    ["systemctl", "--user", "stop", self.unit + ".scope"],
-                    capture_output=True,
-                    timeout=10,
-                )
-                if result.returncode not in {0, 5}:
-                    raise RuntimeError("Cannot confirm managed scope has stopped")
+            self.controller.stop()
             if self.logfile:
                 self.logfile.close()
                 self.logfile = None

@@ -70,6 +70,10 @@ def isolation_capabilities(config=None):
 
 
 def managed_isolation_available():
+    if platform.system() == "Windows":
+        from .windows_managed import probe
+
+        return probe()
     if platform.system() != "Linux" or not shutil.which("systemd-run"):
         return False
     try:
@@ -96,7 +100,7 @@ def managed_isolation_available():
         return False
 
 
-def discover(config, isolation=None):
+def discover(config, isolation=None, managed=None):
     vm = psutil.virtual_memory()
     gpus = gpu_metrics()
     total_vram = max((g["total_mb"] for g in gpus), default=0)
@@ -112,22 +116,32 @@ def discover(config, isolation=None):
         "vram_mb": min(total_vram, config.allocatable_vram_mb),
     }
     isolation = isolation if isolation is not None else isolation_capabilities(config)
+    compute_isolated = bool(
+        {"linux-bwrap-rlimit", "windows-appcontainer-job"}.intersection(isolation)
+    )
+    needs_managed = bool(
+        (config.ollama_executable and config.ollama_models)
+        or (
+            config.comfyui_python and config.comfyui_script and config.comfyui_workflows
+        )
+    )
+    managed = (
+        managed_isolation_available()
+        if managed is None and needs_managed
+        else bool(managed)
+    )
     workers = []
-    if config.enable_compute and isolation:
+    if config.enable_compute and compute_isolated:
         workers.append("compute.stats")
-    if config.enable_synthetic_ai and isolation:
+    if config.enable_synthetic_ai and compute_isolated:
         workers.extend(["synthetic.chat", "synthetic.image"])
-    if (
-        config.ollama_executable
-        and config.ollama_models
-        and managed_isolation_available()
-    ):
+    if config.ollama_executable and config.ollama_models and managed:
         workers.extend("ollama:" + m for m in config.ollama_models)
     if (
         config.comfyui_python
         and config.comfyui_script
         and config.comfyui_workflows
-        and managed_isolation_available()
+        and managed
     ):
         workers.extend("comfyui:" + name for name in config.comfyui_workflows)
     return {
@@ -143,7 +157,18 @@ def discover(config, isolation=None):
         "cpu_load": psutil.cpu_percent(),
         "memory_load": vm.percent,
         "disk_free_mb": shutil.disk_usage(config.work_root).free // 2**20,
-        "isolation": isolation,
+        "isolation": [
+            *isolation,
+            *(
+                [
+                    "windows-managed-job"
+                    if platform.system() == "Windows"
+                    else "linux-user-cgroup"
+                ]
+                if managed
+                else []
+            ),
+        ],
     }
 
 

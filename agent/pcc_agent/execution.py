@@ -5,7 +5,6 @@ import logging
 import os
 import time
 import threading
-from pathlib import Path
 import httpx
 from .sandbox import SandboxedWorker
 from .errors import WorkerStopUnconfirmed
@@ -26,16 +25,24 @@ def post(agent, path, data):
 
 
 def execute(agent, payload):
+    import psutil
+
     job_id = payload["job_id"]
     base = "/internal/v1/jobs/" + job_id
     lease = {"attempt_id": payload["attempt_id"], "lease_token": payload["lease_token"]}
     worker = None
     synthetic_service = None
     journal = agent.config.work_root / "active-attempt.json"
+    identity = {
+        "job_id": job_id,
+        **lease,
+        "controller_pid": os.getpid(),
+        "controller_created_at": psutil.Process().create_time(),
+    }
     # Persistent record aids manual reconciliation; never assume an old child stopped.
     fd = os.open(journal, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     with os.fdopen(fd, "w") as file:
-        json.dump({"job_id": job_id, **lease}, file)
+        json.dump(identity, file)
     confirmed = False
     guardian_done = threading.Event()
     guardian_expired = threading.Event()
@@ -118,10 +125,8 @@ def execute(agent, payload):
             expires[0] - 1, local_deadline
         ):
             raise RuntimeError("Lease expired during worker startup")
-        record = {"job_id": job_id, **lease}
+        record = dict(identity)
         if hasattr(worker, "process"):
-            import psutil
-
             record["pid"] = worker.process.pid
             try:
                 record["process_created_at"] = psutil.Process(
@@ -130,7 +135,8 @@ def execute(agent, payload):
             except psutil.NoSuchProcess:
                 pass
         elif getattr(getattr(worker, "service", None), "backend", None):
-            record["managed_scope"] = getattr(worker.service.backend, "unit", None)
+            backend = worker.service.backend
+            record.update(backend.recovery_record())
         with journal.open("w") as file:
             json.dump(record, file)
 

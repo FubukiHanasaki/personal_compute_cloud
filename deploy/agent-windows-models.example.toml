@@ -1,0 +1,32 @@
+# Author: Fubuki. Copy to agent.toml and replace all local paths/model IDs.
+version = 1
+server = "https://compute.example.com"
+name = "windows-model-node"
+credential_file = 'tmp\agent-credential.json'
+work_root = 'tmp\agent'
+mode = "maintenance"
+allocatable_cpu = 4
+allocatable_memory_mb = 12288
+allocatable_vram_mb = 0
+enable_compute = false
+service_idle_seconds = 300
+
+# Administrator-approved CLI runtime; never point to Ollama's tray application.
+ollama_executable = 'C:\PCC\tmp\ollama\ollama.exe'
+ollama_model_root = 'C:\PCC\tmp\ollama-models'
+ollama_models = ["APPROVED_LOCAL_MODEL"]
+ollama_port = 11435
+ollama_gpu_device = ""
+ollama_vram_mb = 0
+
+# A manual ComfyUI Python environment with matching Torch already installed.
+comfyui_python = 'C:\PCC\tmp\comfy-venv\Scripts\python.exe'
+comfyui_script = 'C:\PCC\tmp\ComfyUI\main.py'
+comfyui_port = 8189
+comfyui_gpu_device = ""
+
+[comfyui_workflows.local-image]
+file = 'C:\PCC\deploy\workflows\sd15-api.example.json'
+prompt_node = "6"
+latent_node = "5"
+min_vram_mb = 4096

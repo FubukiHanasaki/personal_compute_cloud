@@ -80,6 +80,17 @@ def main():
                 raise SystemExit(
                     "Inspect original worker and descendants; pass --confirm-stopped only after verification"
                 )
+            controller = record.get("controller_pid")
+            if controller and psutil.pid_exists(controller):
+                try:
+                    if psutil.Process(controller).create_time() == record.get(
+                        "controller_created_at"
+                    ):
+                        raise SystemExit(
+                            "Owning Agent is still alive; stop it before reconciliation"
+                        )
+                except psutil.NoSuchProcess:
+                    pass
             pid = record.get("pid")
             if pid and psutil.pid_exists(pid):
                 process = psutil.Process(pid)
@@ -88,16 +99,35 @@ def main():
                         "Original worker is still alive; reconciliation refused"
                     )
             scope = record.get("managed_scope")
-            if (
-                scope
-                and subprocess.run(
-                    ["systemctl", "--user", "is-active", "--quiet", scope + ".scope"]
-                ).returncode
-                == 0
-            ):
-                raise SystemExit(
-                    "Managed scope is still active; reconciliation refused"
+            if scope:
+                import re
+
+                if os.name != "posix" or not re.fullmatch(
+                    r"pcc-worker-[a-f0-9]{32}", scope
+                ):
+                    raise SystemExit("Inspect this attempt on its original Linux host")
+                result = subprocess.run(
+                    ["systemctl", "--user", "is-active", "--quiet", scope + ".scope"],
+                    capture_output=True,
+                    timeout=10,
                 )
+                if result.returncode == 0:
+                    raise SystemExit(
+                        "Managed scope is still active; reconciliation refused"
+                    )
+                if result.returncode not in {3, 4}:
+                    raise SystemExit("Cannot confirm managed scope stopped")
+            if record.get("managed_job"):
+                from .windows_managed import active_job
+
+                if os.name != "nt":
+                    raise SystemExit(
+                        "Inspect this attempt on its original Windows host"
+                    )
+                if active_job(record["managed_job"]):
+                    raise SystemExit(
+                        "Managed Windows Job is still active; reconciliation refused"
+                    )
             response = agent.client.post(
                 "/internal/v1/jobs/" + record["job_id"] + "/fail",
                 json={
@@ -118,7 +148,7 @@ def main():
 
             print(
                 json.dumps(
-                    discover(agent.config, agent.isolation),
+                    discover(agent.config, agent.isolation, agent.managed_isolation),
                     ensure_ascii=False,
                     indent=2,
                 )

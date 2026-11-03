@@ -4,6 +4,8 @@
 
 后续 Windows/Server 逻辑审查及修复见 [逻辑检查记录](logic-review-v0.4.md)。该轮按要求未做运行时测试；本文通过数为此前提交的历史结果，不代表后续修改已经实测通过。
 
+随后已实现 Windows 受管 Ollama/ComfyUI，配置及独立验证范围见 [Windows 模型支持](windows-models.md)。本文件保留当时阶段的实测结果。
+
 ## 本轮交付
 
 | 范围 | 实现与检查 |
@@ -30,7 +32,7 @@
 
 实现补齐与本机通过不等同于 V0.4 全部验收通过，仍保留以下具体缺口：
 
-1. 当前只有 Ubuntu 执行环境，5 项 AppContainer/Job 原生用例尚未在 Windows 运行，Windows 安装和断线重连也需实机核验。Windows 上受管 Ollama/ComfyUI 不在本版本能力表中；节点可先使用受控计算。
+1. 当前只有 Ubuntu 执行环境，5 项 AppContainer/Job 原生用例尚未在 Windows 运行，Windows 安装和断线重连也需实机核验。该记录对应阶段尚未实现 Windows 受管 Ollama/ComfyUI；后续实现和新增原生检查入口见上方 Windows 模型文档。
 2. 当前没有 Docker Engine，sudo 探测返回需要交互认证；没有生产域名/DNS。实际容器部署、生产卷恢复、公网 ACME 与真实 NAT/防火墙验收尚未完成。新增 Compose CI 提供了可运行的隔离演练，但尚未触发。
 3. 浏览器视觉校验沿用用户此前“先跳过”的安排，未重新启用；没有 Portal 点击、桌面/移动端截图通过结论。
 

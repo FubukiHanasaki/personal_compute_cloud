@@ -3,17 +3,15 @@
 import base64
 import copy
 import json
-import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import time
 import tempfile
 import uuid
 import httpx
 from .platform import managed_isolation_available
 from .services import OllamaBackend, check_loopback_port
+from .managed_process import environment
 
 ALLOWED_NODES = {
     "CheckpointLoaderSimple",
@@ -48,6 +46,7 @@ def approved_workflow(config, model, data):
         )
     if (
         set(data) != {"prompt", "size"}
+        or not isinstance(data["size"], str)
         or data["size"] not in {"256x256", "512x512"}
         or not isinstance(data["prompt"], str)
         or not 1 <= len(data["prompt"]) <= 2000
@@ -78,7 +77,7 @@ class ComfyUIBackend(OllamaBackend):
 
     def start(self):
         if not managed_isolation_available():
-            raise RuntimeError("ComfyUI requires enforceable Linux user cgroup limits")
+            raise RuntimeError("ComfyUI requires enforceable managed process limits")
         approved = self.config.comfyui_workflows.get(self.model)
         executable, script = (
             Path(self.config.comfyui_python),
@@ -108,36 +107,20 @@ class ComfyUIBackend(OllamaBackend):
             for name in ("user", "input"):
                 (Path(self.staging.name) / name).mkdir()
             env = {
-                "PATH": "/usr/bin:/bin",
-                "HOME": str(self.config.work_root),
-                "XDG_RUNTIME_DIR": os.environ.get(
-                    "XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"
-                ),
-                "DBUS_SESSION_BUS_ADDRESS": os.environ.get(
-                    "DBUS_SESSION_BUS_ADDRESS", f"unix:path=/run/user/{os.getuid()}/bus"
-                ),
-                "CUDA_VISIBLE_DEVICES": self.config.comfyui_gpu_device,
-                "HIP_VISIBLE_DEVICES": "",
+                **environment(self.config, executable),
+                "CUDA_VISIBLE_DEVICES": self.config.comfyui_gpu_device or "-1",
+                "HIP_VISIBLE_DEVICES": "-1",
+                "ROCR_VISIBLE_DEVICES": "-1",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
             }
             command = [
-                shutil.which("systemd-run"),
-                "--user",
-                "--scope",
-                "--quiet",
-                "--unit",
-                self.unit,
-                "-p",
-                f"MemoryMax={self.resources['memory_mb']}M",
-                "-p",
-                f"CPUQuota={int(self.resources['cpu'] * 100)}%",
-                "-p",
-                "TasksMax=256",
                 str(executable),
                 "-I",
                 "-B",
+                "-X",
+                "utf8",
                 str(Path(__file__).with_name("managed_exec.py")),
                 str(self.resources["vram_mb"]),
                 str(script),
@@ -162,18 +145,19 @@ class ComfyUIBackend(OllamaBackend):
             ]
             if not self.config.comfyui_gpu_device:
                 command.append("--cpu")
-            self.process = subprocess.Popen(
+            self.process = self.controller.start(
                 command,
                 cwd=script.parent,
                 env=env,
                 stdout=self.logfile,
-                stderr=self.logfile,
-                start_new_session=True,
             )
         until = time.monotonic() + 60
         while time.monotonic() < until:
             if self.cancelled.is_set() or self.process.poll() is not None:
                 raise RuntimeError("ComfyUI stopped during startup")
+            if not self.controller.listener_ready(self.config.comfyui_port):
+                time.sleep(0.2)
+                continue
             try:
                 self.check_vram()
                 return
@@ -182,11 +166,18 @@ class ComfyUIBackend(OllamaBackend):
         raise RuntimeError("ComfyUI health check timed out")
 
     def check_vram(self):
+        self._require_listener(self.config.comfyui_port)
         response = self.client.get("/system_stats")
         response.raise_for_status()
+        devices = response.json().get("devices", [])
+        if self.config.comfyui_gpu_device and not any(
+            device.get("type") == "cuda" for device in devices
+        ):
+            self.stop()
+            raise RuntimeError("Configured ComfyUI CUDA device is unavailable")
         used = sum(
             int(device.get("torch_vram_total", 0))
-            for device in response.json().get("devices", [])
+            for device in devices
             if device.get("type") == "cuda"
         )
         if used > self.resources["vram_mb"] * 2**20:
@@ -194,6 +185,7 @@ class ComfyUIBackend(OllamaBackend):
             raise RuntimeError("ComfyUI exceeded its approved VRAM reservation")
 
     def generate(self, data, max_bytes, timeout_seconds=300):
+        self._require_listener(self.config.comfyui_port)
         until = time.monotonic() + max(1, timeout_seconds)
         graph = approved_workflow(self.config, self.model, data)
         response = self.client.post(
@@ -206,6 +198,7 @@ class ComfyUIBackend(OllamaBackend):
         while not self.cancelled.is_set():
             if time.monotonic() >= until:
                 raise RuntimeError("Image generation timed out")
+            self._require_listener(self.config.comfyui_port)
             response = self.client.get("/history/" + prompt_id)
             response.raise_for_status()
             history = response.json().get(prompt_id)
@@ -230,6 +223,7 @@ class ComfyUIBackend(OllamaBackend):
                                 "Backend returned an unsafe artifact path"
                             )
                         chunks, length = [], 0
+                        self._require_listener(self.config.comfyui_port)
                         with self.client.stream(
                             "GET",
                             "/view",
@@ -271,6 +265,7 @@ class ComfyUIBackend(OllamaBackend):
 
     def unload(self):
         if self.process and self.process.poll() is None:
+            self._require_listener(self.config.comfyui_port)
             response = self.client.post(
                 "/free", json={"unload_models": True, "free_memory": True}
             )

@@ -2,6 +2,12 @@
 
 作者：Fubuki。
 
+## 未发布 · Windows 受管模型 · 2026-11-03
+
+新增 Windows Ollama/ComfyUI 支持：实际 Job Object 能力探测、创建时原子加入 Job、CPU/提交内存/进程数限制、整个自有进程树停止与 kill-on-close、回环端口归属校验、白名单环境和 Windows 恢复标识。统一两个平台的受管进程接口，保留 Linux cgroup 行为；CPU 模式禁用自动 GPU，显式 GPU 不静默回退 CPU。
+
+新增 Windows 模型配置及 SD1.5 工作流示例、原生 Job/协议夹具/可选真实模型测试和 CI 入口。Ubuntu 定向模拟/契约检查 29 项通过，7 项 Windows 用例跳过；未执行 Windows 实机或真实模型测试。具体范围见 [Windows 模型支持](docs/windows-models.md)。
+
 ## 未发布 · 后续实现补齐 · 2026-11-03
 
 新增 Windows AppContainer/Job Object 受控 Worker、独立 Python 运行时校验、写入前 SID ACL 与停止后 profile 清理；实际计算探测成功后才报告能力。提供 Windows 原生安全测试和 CI，当前 Ubuntu 未运行这些用例。

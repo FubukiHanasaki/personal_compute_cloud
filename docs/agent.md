@@ -46,7 +46,7 @@ $env:PCC_WINDOWS_RUNTIME = (Resolve-Path tmp/windows-worker-runtime).Path
 
 安装脚本校验 Python 官方包的固定 SHA256。每次执行采用唯一 AppContainer SID、零网络 capability、仅显式运行时/任务目录权限、三条标准 I/O 句柄白名单；进程在创建时原子归入 Job，限制 CPU、内存、单进程、输出和墙钟时间，Agent 退出会触发 kill-on-close。凭证在写入前收紧 DACL；本地工作目录也只授权当前账号。AppContainer 的 OS 安全配置由 Windows 管理，正常停止后删除；运行时、任务文件和日志均留在 tmp。独立运行时只能包含 vendor 文件，不能包含 Agent 代码、凭证、用户主目录或配置。
 
-Windows 上的 Ollama/ComfyUI 受管服务尚不提供，因为此版本的推理服务限制依赖 Linux 用户 cgroup；Windows 节点仍可通过上述受控计算后端参与调度。模型不是节点接入的前提。实现依据：[AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)、[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)、[Python 包来源与哈希](https://www.python.org/downloads/release/python-31316/)。
+Windows 已支持受管 Ollama/ComfyUI：标准账号下通过独立 Job Object 约束 CPU、提交内存和子进程数量，启动前实际探测限制可用性。模型进程只监听回环，按其自有 Job 核对端口归属；空闲卸载、取消和 Agent 退出只回收自己的进程树。安装配置及 CPU/NVIDIA GPU 说明见 [Windows 模型支持](windows-models.md)。模型服务不要求配置 compute 的 embeddable Python；需要受控统计模板时才另行配置上述 AppContainer 运行时。Windows 真实模型和原生隔离验收仍待实机执行。实现依据：[AppContainer](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)、[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)、[Python 包来源与哈希](https://www.python.org/downloads/release/python-31316/)。
 
 Agent 被强制终止时，Job 的 kill-on-close 会停止 Worker，OS profile/只读 runtime ACE 可能需要清理。先停止原 Agent，再运行 `pcc-agent cleanup-windows --config agent.toml --confirm-stopped`；工具核对控制进程创建时间、独立推导的包 SID 和本地 runtime，只移除该工作目录中已停止的 PCC profile。活动任务日志仍须按 reconcile 流程核对，清理 profile 不会擅自重试任务。
 
@@ -75,7 +75,7 @@ heartbeat_seconds = 10
 
 Linux compute 要求系统安装 bubblewrap 且内核允许非特权命名空间；Agent 会实际探测，失败则不报告该能力。Worker 使用只读运行时、私有网络/PID/文件命名空间、CPU affinity、CPU 时间、地址空间、文件大小和句柄限制。不对任意第三方代码开放沙箱。CPU 模板配额至少一核，按向下取整的核数执行；小数核的通用计算尚不开放。
 
-## Ollama（Linux 首个真实推理适配器）
+## Ollama（Windows / Linux）
 
 由节点管理员从 [Ollama 官方](https://ollama.com/download/linux) 安装运行时，并预先准备有权使用的模型。PCC 不自动下载用户传入的模型、不连接云付费模型。参数由本地配置选择：
 
@@ -92,13 +92,13 @@ service_idle_seconds = 300
 
 将已安装模型放在 `ollama_model_root` 指向的目录；若使用独立下载服务，同样设置 `OLLAMA_MODELS` 后再 pull。模型名称必须与云端模板 `model` 及 `worker=ollama:<model>` 一致，模板资源不得低于本地显存预算。GPU 设备 UUID 可通过 nvidia-smi 查询，不写入调度核心。
 
-Agent 必须有可用的 systemd 用户 scope 和 cgroup v2 CPU/内存限制，缺少时拒绝能力。自有进程只监听回环端口；端口已占用时拒绝接管已有服务。服务按原生 `keep_alive: 0` 卸载，再终止 PCC 独立 scope 以释放资源。活动请求期间不空闲卸载；多个模型由本地资源锁串行管理。显存为经过本地验证的预算、调度预留及加载/完成后的原生占用检查，**不具备硬件级显存分区**；不应与不可预测的本地 GPU 高负载共用超额预算。
+Linux Agent 必须有可用的 systemd 用户 scope 和 cgroup v2 CPU/内存限制；Windows 必须有探测通过的 Job Object 限制，缺少时拒绝能力。自有进程只监听回环端口；端口已占用时拒绝接管已有服务。服务按原生 `keep_alive: 0` 卸载，再终止 PCC 独立 scope/Job 以释放资源。活动请求期间不空闲卸载；多个模型由本地资源锁串行管理。显存为经过本地验证的预算、调度预留及加载/完成后的原生占用检查，**不具备硬件级显存分区**；不应与不可预测的本地 GPU 高负载共用超额预算。
 
 Chat 请求当前在后端完成后由 Server 以 SSE 分块返回。图片提供 synthetic 协议测试和下文的 ComfyUI 适配器；不能将合成图片视为真实模型效果。
 
 ## 断线与核对
 
-Agent 持续重试出站连接；本地模式不会因断线被改回 Shared。执行中独立租约守卫会停止自有 Worker。领取 ID 持久化，响应丢失后复用；完成确认丢失时按原结果幂等重发。
+Agent 持续重试出站连接；本地模式不会因断线被改回 Shared。执行中独立租约守卫会停止自有 Worker。领取 ID 持久化，响应丢失后复用；完成确认丢失时按原结果幂等重发。手动核对前先停止原 Agent；新日志记录控制进程 PID/创建时间，以及 Linux scope 或 Windows Job 标识，原 Agent 仍存活时拒绝核对。
 
 丢失领取响应后，即使租约已过期，仍能取回原 attempt 并报告未启动/已停止；过期租约不会恢复执行权限。存在 active-attempt 日志时，启动阶段不运行隔离探测 Worker，也不预热新的模型；reconcile 命令同样跳过探测。Windows 创建过程如不能确认清理完成，会保留该日志并停止 Agent，等待人工核对，不会上报 stopped=true。新模型启动前必须确认旧模型已停止。
 

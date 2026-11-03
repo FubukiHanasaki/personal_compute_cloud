@@ -17,6 +17,7 @@
 | Caddy | 2-alpine | Apache-2.0 |
 | bubblewrap | 系统提供，不随 wheel 分发 | LGPL-2.0-or-later |
 | systemd | Linux 用户服务/资源限制，系统提供 | LGPL-2.1-or-later / GPL-2.0-or-later（按组件） |
+| Windows Job Objects | ctypes 调用 Windows 系统 API；不额外分发 SDK/DLL | 随 Windows 系统提供 |
 | ComfyUI（可选） | 本次实测 0.43.0，commit ab08f7b2caa6d4007ecde3762116c6193613f43b，Torch 2.11.0+cu128 | GPL-3.0 / Torch BSD-3-Clause；权重各自许可 |
 | Ollama（可选） | 节点管理员安装，PCC 不内置权重 | MIT；模型权重各自许可 |
 

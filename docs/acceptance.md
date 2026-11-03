@@ -2,6 +2,8 @@
 
 作者：Fubuki。记录日期：2026-11-03（Asia/Shanghai）。本次为本地开发交付，尚不宣布所有 MVP 验收场景完成。
 
+以下实测数字保留历史提交的结果。后续 Windows Ollama/ComfyUI 已实现独立 Job 进程管理，当前新增检查范围见 [Windows 模型支持](windows-models.md)；不将未运行的 Windows 原生/真实模型测试计为通过。
+
 ## 实测环境与证据
 
 Python 3.13.16、Node.js 22.16.0；临时 PostgreSQL 18.6（回环监听、专用非超级用户角色）。CI 另外配置 PostgreSQL 17 与 Windows/Linux Agent 测试矩阵，但未触发远程 CI，不能视为已运行证据。

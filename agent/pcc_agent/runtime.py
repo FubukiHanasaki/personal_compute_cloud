@@ -7,7 +7,12 @@ import ssl
 from pathlib import Path
 import httpx
 from .config import AgentConfig
-from .platform import discover, isolation_capabilities, secure_windows_path
+from .platform import (
+    discover,
+    isolation_capabilities,
+    managed_isolation_available,
+    secure_windows_path,
+)
 
 log = logging.getLogger("pcc.agent")
 
@@ -35,6 +40,19 @@ class Agent:
             and not (self.config.work_root / "active-attempt.json").exists()
             else []
         )
+        self.managed_isolation = bool(
+            probe_isolation
+            and not (self.config.work_root / "active-attempt.json").exists()
+            and (
+                (self.config.ollama_executable and self.config.ollama_models)
+                or (
+                    self.config.comfyui_python
+                    and self.config.comfyui_script
+                    and self.config.comfyui_workflows
+                )
+            )
+            and managed_isolation_available()
+        )
         from .services import ServiceManager
 
         self.services = ServiceManager(self.config)
@@ -58,7 +76,7 @@ class Agent:
         }
         config = self.config.model_copy(update=editable)
         self.config = config
-        caps = discover(config, self.isolation)
+        caps = discover(config, self.isolation, self.managed_isolation)
         self.latest_capabilities = caps
         response = self.client.post(
             "/internal/v1/nodes/heartbeat",

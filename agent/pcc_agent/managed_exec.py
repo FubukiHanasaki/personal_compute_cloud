@@ -6,7 +6,7 @@ import sys
 
 
 def gpu_budget(vram_mb):
-    if not os.environ.get("CUDA_VISIBLE_DEVICES"):
+    if os.environ.get("CUDA_VISIBLE_DEVICES", "") in {"", "-1"}:
         return
     import torch
 
