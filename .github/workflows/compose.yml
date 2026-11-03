@@ -1,0 +1,59 @@
+name: compose-acceptance
+on: [push, pull_request]
+jobs:
+  deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: pcc-acceptance
+      COMPOSE_FILE: compose.yaml:tmp/compose-qa/override.yaml
+      COMPOSE_ENV_FILES: tmp/compose-qa/.env
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated configuration
+        run: |
+          mkdir -p tmp/compose-qa
+          python3 - <<'PY'
+          import json, secrets
+          from pathlib import Path
+          password, app, owner, user, secret = [secrets.token_hex(24) for _ in range(5)]
+          values = {'PCC_DOMAIN':'localhost','POSTGRES_PASSWORD':password,'PCC_APP_DB_PASSWORD':app,'PCC_SECRET':secret,'PCC_DATABASE_URL':f'postgresql+psycopg://pcc:{app}@db/pcc','PCC_OWNER_USERNAME':'Fubuki','PCC_OWNER_PASSWORD':owner,'PCC_ENVIRONMENT':'production','PCC_SECURE_COOKIES':'true'}
+          Path('tmp/compose-qa/.env').write_text(''.join(f'{k}={v}\n' for k,v in values.items()))
+          Path('tmp/compose-qa/.env').chmod(0o600)
+          Path('tmp/compose-qa/state.json').write_text(json.dumps({'owner_password':owner,'user_password':user}))
+          Path('tmp/compose-qa/state.json').chmod(0o600)
+          PY
+          cat > tmp/compose-qa/Caddyfile <<'EOF'
+          {
+              admin off
+              skip_install_trust
+          }
+          localhost {
+              tls internal
+              reverse_proxy server:8000
+          }
+          EOF
+          cat > tmp/compose-qa/override.yaml <<'EOF'
+          services:
+            caddy:
+              volumes:
+                - ./tmp/compose-qa/Caddyfile:/etc/caddy/Caddyfile:ro
+          EOF
+      - run: docker compose up -d --build --wait --wait-timeout 180
+      - name: Seed through verified HTTPS and restart
+        run: |
+          docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt tmp/compose-qa/root.pem
+          python3 tests/compose_smoke.py seed
+          docker compose restart server
+          python3 tests/compose_smoke.py verify
+      - name: Back up and restore into fresh disposable volumes
+        run: |
+          sh deploy/backup.sh tmp/compose-qa/snapshot
+          docker compose down -v
+          sh deploy/restore.sh tmp/compose-qa/snapshot
+          docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt tmp/compose-qa/root.pem
+          python3 tests/compose_smoke.py verify
+      - if: failure()
+        run: docker compose logs --tail 100
+      - if: always()
+        run: docker compose down -v

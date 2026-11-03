@@ -59,15 +59,29 @@ sh deploy/backup.sh tmp/backups/$(date +%Y%m%d-%H%M%S)
 
 ## 恢复
 
-在隔离环境先演练，勿覆盖尚未备份的生产数据。保持相同版本和 `PCC_SECRET`。在新主机设置同等配置，先创建卷和数据库，然后停 Server：
+恢复脚本只接受新数据库和空工件目录，拒绝覆盖已有数据。先在隔离环境演练，保持相同版本和 `PCC_SECRET`；在新主机配置 `.env` 后执行：
 
 ```bash
-docker compose up -d db
-docker compose stop server
-sha256sum -c tmp/backups/SHA256SUMS
-docker compose exec -T db pg_restore -U pcc -d pcc --clean --if-exists --no-owner < tmp/backups/pcc.dump
-docker compose run --rm --no-deps -T --entrypoint tar server -C /data -xzf - < tmp/backups/artifacts.tar.gz
-docker compose up -d
+sh deploy/restore.sh tmp/backups/SNAPSHOT_DIRECTORY
 ```
 
-检查健康、登录、节点重连、工件 SHA256；旧租约进入 reconciling 后先确认原节点进程终止，再人工核对。tar 只恢复自己生成且已校验的备份。恢复演练与生产 TLS 需要真实部署环境验收，本机测试不替代这一步。
+脚本校验固定文件名的 SHA256 清单，检查归档路径、重复条目、符号/硬链接、展开大小和目标目录；数据库使用单事务恢复且不执行 `--clean`，遇到已有表会失败回滚。全部恢复完成前不启动 Server。失败后保留离线状态，检查原因并在新的空目标重试；不要把半恢复状态开放给用户。
+
+本轮起备份包含 manifest version 1、可搬移的 SHA256SUMS、pcc.dump 和 artifacts.tar.gz；使用只包含不透明工件文件名的归档格式。旧脚本生成的含目录条目的归档不能直接交给新恢复脚本，应在隔离目录审查后迁移。校验和用于检测损坏，不代替可信保管和加密。
+
+检查健康、登录、节点重连、工件 SHA256；旧租约进入 reconciling 后先确认原节点进程终止，再人工核对。已在本地 PostgreSQL 18.6 非超级用户角色完成真实备份→清空测试表与工件→恢复→重新登录/授权下载演练；这不能替代生产 Docker 卷和公网 TLS 的实机验收。
+
+## 原生 PostgreSQL 备份与演练
+
+不使用 Compose 的管理环境也可调用同一格式的 Python 工具。需要与服务端相同或更新版本的 pg_dump/pg_restore，连接参数从 PCC_DATABASE_URL 环境变量读取；密码不会出现在命令行或快照中。先停止所有 Server 写入，再显式确认 quiesced：
+
+```bash
+# PCC_DATABASE_URL 指向要备份的库；工件目录按部署配置填写。
+python -m pcc_server.backup create tmp/backups/SNAPSHOT --storage-root tmp/artifacts --quiesced
+python -m pcc_server.backup verify tmp/backups/SNAPSHOT
+# 修改 PCC_DATABASE_URL，指向专用的全新空恢复库；保持 Server 停止。
+python -m pcc_server.backup restore tmp/backups/SNAPSHOT --storage-root tmp/restored-artifacts --quiesced
+# 客户端未在 PATH 时可添加 --pg-bin /absolute/postgresql/bin。
+```
+
+恢复目标必须为空；工具不会自动删除旧数据。重启 Server 前核验数据库、文件、身份和迁移版本。需要预留足够的磁盘与备份传输空间；快照不包含 .env、私钥或模型权重。
