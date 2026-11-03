@@ -47,3 +47,9 @@ Linux 实际使用 bubblewrap 的网络/PID/挂载命名空间、只读运行时
 16 项测试通过，包括合成 Chat JSON/SSE 和 PNG 工件完整闭环、活动请求防卸载及 GPU 锁逻辑。Chat SSE 首版在推理完成后分块返回，尚非后端逐 token 转发。首版真实适配器为 Linux Ollama；Windows 在缺少等效隔离实现时拒绝该 Worker。尚未接入真实图像推理适配器。
 
 本机主机检查发现可用 NVIDIA GPU，但无模型与推理运行时。真实 GPU 加载→推理→卸载未验证，P4 的硬件完成标志仍未达到。后续交付界面和加固实现以便联调，不将其视为 MVP 已验收发布。
+
+## P5 结果
+
+React/TypeScript 中文响应式 UI 已连接真实 API：安全登录、任务工作台/分页/日志/取消/结果下载、Chat SSE、图片异步提交与历史、节点指标/云端共享模式/一次性令牌/独立中止/吊销、模型服务启停、用户授权/API Key/模板登记/审计。没有硬编码节点和模型数据。空状态从 API 返回，未配置时禁止相应提交。
+
+TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过。当前 CUA 浏览器清单为空，浏览器点击和移动端实机 QA 尚无证据。运行：npm run build --prefix web 后启动 pcc-server，访问根路径。页面作者署名 Fubuki。

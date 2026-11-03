@@ -1,7 +1,8 @@
 import uuid
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.exceptions import HTTPException
 from .config import get_settings
@@ -52,4 +53,12 @@ def create_app(settings=None):
     from .ai import router as ai_router
     app.include_router(services_router)
     app.include_router(ai_router)
+    if (settings.web_root / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=settings.web_root / "assets"), name="assets")
+    @app.get("/", include_in_schema=False)
+    def portal():
+        index = settings.web_root / "index.html"
+        if not index.is_file():
+            raise HTTPException(503, "请先构建 WebUI：npm run build --prefix web")
+        return FileResponse(index)
     return app
