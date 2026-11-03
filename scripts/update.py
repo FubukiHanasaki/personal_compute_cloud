@@ -147,6 +147,12 @@ def install(root, target):
 
 
 def main(argv=None):
+    # Windows CI captures stdout via a pipe, which can default to a legacy code
+    # page. The help/error text is Chinese; configure both streams before argparse.
+    for stream in (sys.stdout, sys.stderr):
+        configure = getattr(stream, "reconfigure", None)
+        if configure:
+            configure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="PCC GitHub 更新 · FubukiHanasaki")
     parser.add_argument("--apply", action="store_true", help="快进拉取；默认只检查")
     parser.add_argument(

@@ -136,3 +136,26 @@ def test_agent_install_targets_existing_venv_and_keeps_caches_in_tmp(
             assert "--frozen" in command
         else:
             assert command[0] == str(interpreter)
+
+
+def test_help_survives_legacy_windows_pipe_encoding(tmp_path):
+    # Reproduce a redirected Windows cp1252 console on any platform, without Git
+    # or network activity: argparse exits before any update operation.
+    import os
+    import sys
+
+    script = Path(__file__).resolve().parents[1] / "scripts/update.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        env={
+            **os.environ,
+            "PYTHONIOENCODING": "cp1252",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        },
+        capture_output=True,
+        cwd=tmp_path,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+    assert "检查" in result.stdout.decode("utf-8")
+    assert not list(tmp_path.iterdir())

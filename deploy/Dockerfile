@@ -3,6 +3,8 @@ WORKDIR /build/web
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
+# The console imports the same palette that is packaged with the Agent GUI.
+COPY agent/pcc_agent/gui_assets/theme.css /build/agent/pcc_agent/gui_assets/theme.css
 RUN npm run build
 
 FROM python:3.12-slim-bookworm
