@@ -1,0 +1,5 @@
+{$PCC_DOMAIN} {
+    encode zstd gzip
+    request_body { max_size 11MB }
+    reverse_proxy server:8000
+}
