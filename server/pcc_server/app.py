@@ -40,4 +40,6 @@ def create_app(settings=None):
             conn.execute(text("SELECT 1"))
         return {"status": "ok", "version": "0.1.0"}
 
+    from .nodes import router as nodes_router
+    app.include_router(nodes_router)
     return app

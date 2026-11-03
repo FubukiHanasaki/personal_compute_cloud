@@ -1,6 +1,7 @@
 from alembic import context
 from pcc_server.config import get_settings
 from pcc_server.db import Base, make_engine
+from pcc_server import models  # noqa: F401
 
 config = context.config
 if context.is_offline_mode():
