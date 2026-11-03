@@ -42,4 +42,8 @@ def create_app(settings=None):
 
     from .nodes import router as nodes_router
     app.include_router(nodes_router)
+    from .templates import router as templates_router
+    from .jobs import router as jobs_router
+    app.include_router(templates_router)
+    app.include_router(jobs_router)
     return app

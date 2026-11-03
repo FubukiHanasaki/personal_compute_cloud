@@ -2,6 +2,7 @@ import json
 import logging
 import random
 import time
+import uuid
 from pathlib import Path
 import httpx
 from .config import AgentConfig
@@ -37,7 +38,16 @@ class Agent:
                 backoff = 1
                 if once:
                     return
-                time.sleep(self.config.heartbeat_seconds)
+                journal = self.config.work_root / "active-attempt.json"
+                if journal.exists():
+                    log.error("Unacknowledged attempt present: inspect worker termination before reconciliation")
+                    time.sleep(self.config.heartbeat_seconds)
+                    continue
+                response = self.client.post("/internal/v1/jobs/claim", json={"claim_id": uuid.uuid4().hex, "wait_seconds": min(5, self.config.heartbeat_seconds)})
+                response.raise_for_status()
+                if response.status_code == 200:
+                    from .execution import execute
+                    execute(self, response.json())
             except (httpx.HTTPError, OSError, ValueError) as exc:
                 log.warning("Connection unavailable (%s); local policy remains authoritative", type(exc).__name__)
                 if once:

@@ -27,3 +27,11 @@ Git 署名、文档作者及产品署名：Fubuki。临时文件统一 tmp/，�
 新增身份/节点迁移 0002、一次性注册、节点专用哈希凭证、跨平台配置与发现、HTTPS 重连、非特权安装脚本。通过本机 bootstrap-key 生成一小时管理凭证进行首轮联调；会话与完整用户管理在 P3 加入。默认 Maintenance，管理员和本地均需明确允许共享。节点状态由心跳新鲜度计算，不因重连重置本地策略。
 
 P1 验证：3 项测试通过（含 P0）；SQLite 迁移至 0002 通过。Windows/Linux 代码路径已提供，当前只有 Linux 主机，Windows 实机安装与断网场景仍需验收。不存在静默宿主机执行回退：无合格隔离层只接入监控，不报告 compute 能力。
+
+## P2 结果
+
+新增 0003 迁移、受控模板 API、Job/Attempt 状态机、PostgreSQL 事务 advisory lock + 有效 attempt 唯一索引、幂等提交/领取/完成、租约续期、待核对及停止确认、取消、分页日志、本地工件存储和授权下载。SQLite 采用 BEGIN IMMEDIATE，生产禁止使用 SQLite。资源计入未核对 attempt，避免失联后过量分配；Shared 优先。
+
+Linux 实际使用 bubblewrap 的网络/PID/挂载命名空间、只读运行时、独立临时目录、CPU affinity、地址空间/CPU 时间/文件大小限制。没有支持的隔离能力即不提供该 Worker。Windows 此时可监控接入，不宣称与 Linux 等价的计算隔离。
+
+9 项测试通过，包括真实隔离子进程完成“提交→领取→统计→工件上传→授权下载”、并发领取、过期租约、停止确认后重试和旧结果拒绝。实际 GPU、Docker HTTPS 和 Windows 仍未验收。架构保持模块化单体，无额外队列服务。生产前仍需 P3–P6。
