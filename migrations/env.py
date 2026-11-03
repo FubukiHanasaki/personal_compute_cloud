@@ -5,8 +5,11 @@ from pcc_server import models  # noqa: F401
 
 config = context.config
 if context.is_offline_mode():
-    context.configure(url=get_settings().database_url, target_metadata=Base.metadata,
-                      literal_binds=True)
+    context.configure(
+        url=get_settings().database_url,
+        target_metadata=Base.metadata,
+        literal_binds=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 else:

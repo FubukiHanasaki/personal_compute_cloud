@@ -5,7 +5,7 @@ if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 New-Item -ItemType Directory -Force tmp | Out-Null
 py -3 -m venv tmp\agent-venv
 if ($LASTEXITCODE -ne 0) { throw 'Python 3.12+ is required' }
-& tmp\agent-venv\Scripts\python.exe -m pip install .
+& tmp\agent-venv\Scripts\python.exe -m pip install --cache-dir tmp\pip-cache .
 if ($LASTEXITCODE -ne 0) { throw 'Installation failed' }
 & tmp\agent-venv\Scripts\pcc-agent.exe init --config agent.toml
 # Remove inherited broad read access from future credential directory.

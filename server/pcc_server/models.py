@@ -1,6 +1,17 @@
 import time
 import uuid
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -45,7 +56,9 @@ class Node(Base):
     os: Mapped[str] = mapped_column(String(32))
     capabilities: Mapped[dict] = mapped_column(JSON, default=dict)
     policy: Mapped[dict] = mapped_column(JSON, default=lambda: {"mode": "maintenance"})
-    local_policy: Mapped[dict] = mapped_column(JSON, default=lambda: {"mode": "maintenance"})
+    local_policy: Mapped[dict] = mapped_column(
+        JSON, default=lambda: {"mode": "maintenance"}
+    )
     last_seen: Mapped[float] = mapped_column(Float, default=time.time)
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
@@ -107,9 +120,13 @@ class JobAttempt(Base):
     __tablename__ = "job_attempts"
     __table_args__ = (
         UniqueConstraint("node_id", "claim_id", name="uq_node_claim"),
-        Index("uq_job_live_attempt", "job_id", unique=True,
-              postgresql_where=text("status IN ('active', 'reconciling')"),
-              sqlite_where=text("status IN ('active', 'reconciling')")),
+        Index(
+            "uq_job_live_attempt",
+            "job_id",
+            unique=True,
+            postgresql_where=text("status IN ('active', 'reconciling')"),
+            sqlite_where=text("status IN ('active', 'reconciling')"),
+        ),
     )
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), index=True)

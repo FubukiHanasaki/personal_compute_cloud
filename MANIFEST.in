@@ -1,0 +1,11 @@
+include LICENSE README.md CHANGELOG.md pyproject.toml setup.cfg uv.lock alembic.ini compose.yaml .env.example
+recursive-include agent *.py
+recursive-include server *.py
+recursive-include migrations *.py *.mako
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include deploy *.sh *.ps1 *.service Dockerfile Caddyfile
+recursive-include docs *.md *.json
+include web/package.json web/package-lock.json web/tsconfig.json web/index.html
+recursive-include web/src *.ts *.tsx *.css
+global-exclude *.py[cod]

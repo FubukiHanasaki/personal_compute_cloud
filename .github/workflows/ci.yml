@@ -6,7 +6,12 @@ jobs:
     services:
       postgres:
         image: postgres:17
-        env: {POSTGRES_USER: pcc, POSTGRES_PASSWORD: ci-test-only, POSTGRES_DB: pcc}
+        env:
+          {
+            POSTGRES_USER: pcc,
+            POSTGRES_PASSWORD: ci-test-only,
+            POSTGRES_DB: pcc,
+          }
         ports: ["5432:5432"]
         options: --health-cmd pg_isready --health-interval 5s --health-retries 10
     env:
@@ -20,10 +25,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        with: {version: "0.13.0", enable-cache: false}
+        with: { version: "0.13.0", enable-cache: false }
       - run: uv sync --extra test --frozen
       - run: uv run alembic upgrade head
       - run: uv run pytest
       - uses: actions/setup-node@v4
-        with: {node-version: "22"}
+        with: { node-version: "22" }
       - run: npm ci --prefix web && npm run build --prefix web
+
+  agent-platforms:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: { version: "0.13.0", enable-cache: false }
+      - run: uv sync --extra test --frozen
+        env:
+          UV_PROJECT_ENVIRONMENT: tmp/venv
+          UV_CACHE_DIR: tmp/uv-cache
+      - run: uv run --extra test pytest tests/test_agent_config.py
+        env:
+          UV_PROJECT_ENVIRONMENT: tmp/venv
+          UV_CACHE_DIR: tmp/uv-cache
+          PYTHONDONTWRITEBYTECODE: 1

@@ -1,4 +1,5 @@
 """Storage boundary: server-selected opaque keys only. Author: Fubuki."""
+
 from pathlib import Path
 from typing import Protocol
 import hashlib
@@ -41,5 +42,6 @@ class LocalStorage:
 
 class S3Storage:
     """Extension point; deliberately unavailable until scoped adapter is implemented."""
+
     def __init__(self, *args, **kwargs):
         raise NotImplementedError("S3 is reserved for V1; use local storage")

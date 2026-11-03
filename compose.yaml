@@ -12,11 +12,27 @@ services:
       - caddy_config:/config
     networks: [edge]
     depends_on:
-      server: {condition: service_healthy}
+      server: { condition: service_healthy }
   server:
-    build: {context: ., dockerfile: deploy/Dockerfile}
+    build: { context: ., dockerfile: deploy/Dockerfile }
     restart: unless-stopped
-    env_file: .env
+    environment:
+      PCC_ENVIRONMENT: ${PCC_ENVIRONMENT:-production}
+      PCC_DATABASE_URL: ${PCC_DATABASE_URL:?set PCC_DATABASE_URL}
+      PCC_SECRET: ${PCC_SECRET:?set PCC_SECRET}
+      PCC_OWNER_USERNAME: ${PCC_OWNER_USERNAME:-Fubuki}
+      PCC_OWNER_PASSWORD: ${PCC_OWNER_PASSWORD:-}
+      PCC_SECURE_COOKIES: ${PCC_SECURE_COOKIES:-true}
+      PCC_HEARTBEAT_TIMEOUT: ${PCC_HEARTBEAT_TIMEOUT:-45}
+      PCC_LEASE_SECONDS: ${PCC_LEASE_SECONDS:-30}
+      PCC_ARTIFACT_MAX_BYTES: ${PCC_ARTIFACT_MAX_BYTES:-10485760}
+      PCC_ARTIFACT_RETENTION_DAYS: ${PCC_ARTIFACT_RETENTION_DAYS:-7}
+      PCC_USER_ACTIVE_JOB_LIMIT: ${PCC_USER_ACTIVE_JOB_LIMIT:-4}
+      PCC_USER_DAILY_JOB_LIMIT: ${PCC_USER_DAILY_JOB_LIMIT:-1000}
+      PCC_CHAT_WAIT_SECONDS: ${PCC_CHAT_WAIT_SECONDS:-120}
+      PCC_SESSION_HOURS: ${PCC_SESSION_HOURS:-12}
+      PCC_TRUSTED_PROXIES: "*"
+      PCC_BIND_HOST: "0.0.0.0"
     volumes: ["artifacts:/data"]
     networks: [edge, database]
     read_only: true
@@ -24,9 +40,15 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     depends_on:
-      db: {condition: service_healthy}
+      db: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -34,19 +56,22 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: pcc
+      POSTGRES_USER: pcc_admin
       POSTGRES_DB: pcc
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-    volumes: ["postgres:/var/lib/postgresql/data"]
+      PCC_APP_DB_PASSWORD: ${PCC_APP_DB_PASSWORD:?set PCC_APP_DB_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/10-pcc.sh:ro
     networks: [database]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pcc"]
+      test: ["CMD-SHELL", "pg_isready -U pcc_admin"]
       interval: 5s
       timeout: 3s
       retries: 15
 networks:
   edge: {}
-  database: {internal: true}
+  database: { internal: true }
 volumes:
   postgres: {}
   artifacts: {}

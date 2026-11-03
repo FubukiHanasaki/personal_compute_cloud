@@ -40,16 +40,34 @@ Linux 实际使用 bubblewrap 的网络/PID/挂载命名空间、只读运行时
 
 新增 0004 迁移、scrypt 密码、HttpOnly/SameSite 会话、CSRF、持久登录限流、密钥作用域/期限/吊销、Owner 用户授权界面所需 API、节点 Admin 资源授权及审计查询。管理权限由后端验证；普通用户只能访问自己的任务/工件。13 项测试通过，新增用户隔离、越权、Private 本地优先、Admin 授权、CSRF 和登录失败审计；SQLite 全量迁移及 Alembic 差异检查通过。实际生产 TLS 和 Windows/GPU 仍待外部环境验收。
 
-## P4 软件交付与待验收项
+## P4 阶段提交记录（最终验收见 P6）
 
 新增 0005 服务定义/实例迁移、服务期望状态与心跳报告、模型注册、OpenAI Chat 严格字段子集、SSE、原生异步图片接口。Agent 提供受管 Ollama 进程、回环监听、本地模型允许列表、systemd 用户 scope 的 CPU/内存/进程数限制、独占服务资源锁、活动请求计数和空闲原生卸载后终止自有 scope。合成适配器显式标记 synthetic，不把测试图片或回显当成真实 AI。
 
 16 项测试通过，包括合成 Chat JSON/SSE 和 PNG 工件完整闭环、活动请求防卸载及 GPU 锁逻辑。Chat SSE 首版在推理完成后分块返回，尚非后端逐 token 转发。首版真实适配器为 Linux Ollama；Windows 在缺少等效隔离实现时拒绝该 Worker。尚未接入真实图像推理适配器。
 
-本机主机检查发现可用 NVIDIA GPU，但无模型与推理运行时。真实 GPU 加载→推理→卸载未验证，P4 的硬件完成标志仍未达到。后续交付界面和加固实现以便联调，不将其视为 MVP 已验收发布。
+P4 提交时本机尚无模型与运行时，硬件标志未达到。P6 已在 tmp 准备并校验公开测试模型，完成真实 GPU 加载、推理、空闲卸载与自有进程退出；当前证据见 acceptance.md。
 
 ## P5 结果
 
 React/TypeScript 中文响应式 UI 已连接真实 API：安全登录、任务工作台/分页/日志/取消/结果下载、Chat SSE、图片异步提交与历史、节点指标/云端共享模式/一次性令牌/独立中止/吊销、模型服务启停、用户授权/API Key/模板登记/审计。没有硬编码节点和模型数据。空状态从 API 返回，未配置时禁止相应提交。
 
 TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过。当前 CUA 浏览器清单为空，浏览器点击和移动端实机 QA 尚无证据。运行：npm run build --prefix web 后启动 pcc-server，访问根路径。页面作者署名 Fubuki。
+
+
+## P6 开发版加固结果
+
+- 新增请求体与任务/工件总量限额、请求 ID/结构化日志/拒绝审计、无堆栈错误信封、过期工件/会话清理、Owner 人工停止确认与旧结果 fencing。
+- Agent 持久化领取 ID，丢失完成确认时精确重试；独立守卫使用服务端 TTL 与本地单调时钟，网络阻塞和时钟偏差不绕过租约。启动前再次校验本地 Private/Reserved/负载/额度/已启用适配器，退出停止自有服务。
+- 模型慢启动在后台执行，不阻塞心跳；服务预热计入调度资源。长轮询等待释放线程，数据库原子领取仍保持全进程事务锁。
+- 增加真实 ComfyUI 队列/历史/PNG 下载适配器：管理员批准的本地工作流、固定安全节点类型、禁用 custom nodes、回环监听和 cgroup 资源限制、受控临时目录。实际图像权重尚待验收，协议 mock 不作为实模结果。
+- 完善中文界面中的队列解释、API Key 有效期、预留名单与负载策略；统一格式化源码。静态 API 文档不依赖第三方 CDN 脚本。
+- 补齐 Docker 非 root Server、PostgreSQL 非超级用户账号初始化、Caddy 请求上限、打包清单、开发工具、备份/恢复和 A01–A14 验收矩阵。
+
+最终验证：SQLite **38/38**，实际 PostgreSQL 18.6 非超级用户角色 **38/38**，无 skip；包括真实 HTTP + Agent + 隔离进程 + 授权下载，且探测确认沙箱无法读取宿主凭证或连接宿主回环服务。前端 TypeScript/Vite、wheel/sdist 构建、wheel 独立安装及 CLI 入口、Shell 语法、Compose 与 Caddy 原生配置校验通过。FastAPI/Starlette 测试客户端有一条弃用提示，已记录依赖升级策略。
+
+真实 Ollama 0.40.14 / smollm2:135m GPU 生命周期已实测；原生显存 381,828,463 bytes，完整证据保存于 docs/evidence/gpu-lifecycle.json，仅证明推理链路，不评价生成质量。没有真实 GPU 的 CI 不伪造此证据。
+
+运行：`python3 scripts/dev.py setup / init-dev / migrate / build / serve` 按 README 顺序；生产用 `.env.example` 和 Docker Compose。临时运行时、权重、数据库、缓存、虚拟环境和构建产物全部留在忽略的 tmp/。Git 采用 P0–P6 分阶段提交，作者 Fubuki，开发版标签 v0.1.0-dev。
+
+**尚未完成发布验收：** Windows 实机接入/等价受限执行器、ComfyUI 真实图片权重、Docker/Caddy 真机 HTTPS 与重启持久性、备份恢复演练、浏览器及移动端交互验证。当前是可运行开发版，不宣称 A01–A14 全通过。架构未引入额外队列、微服务或硬件型号调度分支。

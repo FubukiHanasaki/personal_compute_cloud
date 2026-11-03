@@ -1,0 +1,16 @@
+{
+  "author": "Fubuki",
+  "model": "smollm2:135m",
+  "size_vram_bytes": 381828463,
+  "content": "Two plus two is a simple and straightforward question that has been asked multiple times. It can be answered by simply adding 1 + 1, which indeed equals 2. However, this answer might not give you the most accurate answer in the context of this specific question.",
+  "idle_unloaded_and_process_stopped": true,
+  "synthetic": false,
+  "date": "2026-11-03",
+  "timezone": "Asia/Shanghai",
+  "runtime": "Ollama 0.40.14",
+  "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU, 6144 MiB",
+  "isolation": "non-root systemd user scope; CPUQuota=200%; MemoryMax=3072M; TasksMax=256",
+  "model_blob_sha256": "f535f83ec568d040f88ddc04a199fa6da90923bbb41d4dcaed02caa924d6ef57",
+  "assertion_scope": "Real model GPU allocation, nonempty inference, native idle unload, owned process exit; model answer quality is not assessed.",
+  "scope_stop_confirmation": "Entire owned systemd scope stopped; stop failures retain backend and quarantine scheduling"
+}

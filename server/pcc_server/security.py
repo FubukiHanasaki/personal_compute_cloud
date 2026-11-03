@@ -15,7 +15,9 @@ def token(prefix):
 
 
 def digest(value, settings):
-    return hmac.new(settings.secret.encode(), value.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(
+        settings.secret.encode(), value.encode(), hashlib.sha256
+    ).hexdigest()
 
 
 def hash_password(password):
@@ -27,7 +29,9 @@ def hash_password(password):
 def verify_password(password, stored):
     try:
         salt, expected = stored.split(":")
-        actual = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1)
+        actual = hashlib.scrypt(
+            password.encode(), salt=bytes.fromhex(salt), n=16384, r=8, p=1
+        )
         return hmac.compare_digest(actual.hex(), expected)
     except (ValueError, TypeError):
         return False
@@ -47,20 +51,30 @@ def bearer(request):
 def current_user(request: Request, db=Depends(get_db)):
     settings = request.app.state.settings
     if request.headers.get("authorization"):
-        key = db.scalar(select(APIKey).where(APIKey.hash == digest(bearer(request), settings)))
+        key = db.scalar(
+            select(APIKey).where(APIKey.hash == digest(bearer(request), settings))
+        )
         if not key or key.revoked_at or key.expires_at <= time.time():
             raise HTTPException(401, "凭证无效或已过期")
         user = db.get(User, key.user_id)
         request.state.scopes = key.scopes
     else:
         raw = request.cookies.get("pcc_session", "")
-        session = db.scalar(select(WebSession).where(WebSession.hash == digest(raw, settings))) if raw else None
+        session = (
+            db.scalar(
+                select(WebSession).where(WebSession.hash == digest(raw, settings))
+            )
+            if raw
+            else None
+        )
         if not session or session.expires_at <= time.time():
             raise HTTPException(401, "请登录")
         user = db.get(User, session.user_id)
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            expected = digest("csrf:"+raw, settings)
-            if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), expected):
+            expected = digest("csrf:" + raw, settings)
+            if not hmac.compare_digest(
+                request.headers.get("x-csrf-token", ""), expected
+            ):
                 raise HTTPException(403, "CSRF 校验失败")
         request.state.session_id = session.id
         request.state.scopes = sorted(SCOPES - {"admin"})
@@ -68,6 +82,7 @@ def current_user(request: Request, db=Depends(get_db)):
             request.state.scopes.append("admin")
     if not user or user.status != "active":
         raise HTTPException(401, "账户不可用")
+    request.state.actor = user.id
     return user
 
 
@@ -85,15 +100,22 @@ def admin(request: Request, user=Depends(current_user)):
 
 
 def can_manage(user, node):
-    return user.role == "owner" or (user.role == "admin" and node.id in user.grants.get("nodes", []))
+    return user.role == "owner" or (
+        user.role == "admin" and node.id in user.grants.get("nodes", [])
+    )
 
 
 def current_node(request: Request, db=Depends(get_db)):
     raw = bearer(request)
-    credential = db.scalar(select(NodeCredential).where(NodeCredential.hash == digest(raw, request.app.state.settings)))
+    credential = db.scalar(
+        select(NodeCredential).where(
+            NodeCredential.hash == digest(raw, request.app.state.settings)
+        )
+    )
     if not credential or credential.revoked_at or credential.expires_at <= time.time():
         raise HTTPException(401, "节点凭证无效或已过期")
     node = db.get(Node, credential.node_id)
     if not node or node.disabled:
         raise HTTPException(403, "节点已禁用")
+    request.state.actor = node.id
     return node

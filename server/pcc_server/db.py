@@ -10,7 +10,9 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url):
-    options = {"check_same_thread": False, "timeout": 30} if url.startswith("sqlite") else {}
+    options = (
+        {"check_same_thread": False, "timeout": 30} if url.startswith("sqlite") else {}
+    )
     return create_engine(url, connect_args=options, pool_pre_ping=True)
 
 

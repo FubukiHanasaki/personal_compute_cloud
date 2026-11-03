@@ -25,7 +25,9 @@ class Capabilities(Strict):
 
 
 class Policy(Strict):
-    mode: Literal["shared", "private", "reserved", "maintenance", "offline"] = "maintenance"
+    mode: Literal["shared", "private", "reserved", "maintenance", "offline"] = (
+        "maintenance"
+    )
     allowed_users: list[str] = Field(default_factory=list, max_length=100)
     max_cpu_load: float = Field(default=85, ge=1, le=100)
     max_memory_load: float = Field(default=90, ge=1, le=100)
