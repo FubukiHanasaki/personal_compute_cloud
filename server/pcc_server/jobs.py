@@ -314,15 +314,18 @@ def list_jobs(
     request: Request,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    task_type: Literal["compute.stats", "ai.chat", "ai.image"] | None = None,
     user=Depends(current_user),
     db=Depends(get_db),
 ):
     require_scope(request, "jobs:read")
     with transaction(db):
         sweep(db, request.app.state.settings)
-        query = select(Job).order_by(Job.created_at.desc())
+        query = select(Job).order_by(Job.created_at.desc(), Job.id.desc())
         if user.role != "owner":
             query = query.where(Job.owner_id == user.id)
+        if task_type:
+            query = query.where(Job.task_type == task_type)
         rows = db.scalars(query.offset(offset).limit(limit)).all()
     return {"items": [view(j) for j in rows], "limit": limit, "offset": offset}
 

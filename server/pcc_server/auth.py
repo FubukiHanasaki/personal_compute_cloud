@@ -208,7 +208,11 @@ def keys(
     db=Depends(get_db),
 ):
     rows = db.scalars(
-        select(APIKey).where(APIKey.user_id == user.id).offset(offset).limit(limit)
+        select(APIKey)
+        .where(APIKey.user_id == user.id)
+        .order_by(APIKey.id)
+        .offset(offset)
+        .limit(limit)
     )
     return {
         "items": [

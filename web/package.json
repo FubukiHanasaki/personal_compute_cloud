@@ -6,6 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "test:api": "tsc src/api.ts --outDir ../tmp/web-api --target ES2022 --module ESNext --skipLibCheck && node ../tests/web-api.mjs",
     "build": "tsc -b && vite build --outDir ../tmp/web-dist --emptyOutDir",
     "dev": "vite --host 127.0.0.1"
   },

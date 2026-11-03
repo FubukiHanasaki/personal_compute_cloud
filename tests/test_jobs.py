@@ -47,6 +47,58 @@ def lease(payload):
     return {k: payload[k] for k in ("attempt_id", "lease_token")}
 
 
+def test_history_type_filter_precedes_pagination_and_preserves_ownership(env):
+    """Old image history remains reachable after newer compute jobs. Author: Fubuki."""
+    from fastapi.testclient import TestClient
+    from test_auth import login
+
+    app, c, auth, owner_id = env
+    template(c, auth)
+    user = c.post(
+        "/api/v1/admin/users",
+        headers=auth,
+        json={"username": "history-user", "password": "history-password-1234"},
+    ).json()
+    with app.state.sessions() as db:
+        for i in range(65):
+            db.add(
+                Job(
+                    owner_id=user["id"] if i < 64 else owner_id,
+                    template_id="stats",
+                    task_type="ai.image" if i < 32 or i == 64 else "compute.stats",
+                    status="completed",
+                    input={},
+                    requirements={},
+                    timeout_seconds=60,
+                    request_hash="fixture",
+                    created_at=1000 + i,
+                )
+            )
+        db.commit()
+    with TestClient(app) as client:
+        login(client, "history-user", "history-password-1234")
+        assert all(
+            row["task_type"] == "compute.stats"
+            for row in client.get("/api/v1/jobs?limit=30").json()["items"]
+        )
+        first = client.get("/api/v1/jobs?task_type=ai.image&limit=30").json()["items"]
+        second = client.get(
+            "/api/v1/jobs?task_type=ai.image&limit=30&offset=30"
+        ).json()["items"]
+        assert len(first) == 30 and len(second) == 2
+        assert all(row["task_type"] == "ai.image" for row in first + second)
+        assert len({row["job_id"] for row in first + second}) == 32
+        assert client.get("/api/v1/jobs?task_type=shell").status_code == 422
+    assert (
+        len(
+            c.get("/api/v1/jobs?task_type=ai.image&limit=100", headers=auth).json()[
+                "items"
+            ]
+        )
+        == 33
+    )
+
+
 def test_job_lifecycle_artifacts_idempotency_and_logs(env):
     app, c, auth, _ = env
     template(c, auth)

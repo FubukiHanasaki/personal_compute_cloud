@@ -1,7 +1,14 @@
-import React, { FormEvent, useCallback, useEffect, useState } from "react";
+import React, {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   api,
+  listAll,
   setCsrf,
   streamChat,
   type User,
@@ -183,6 +190,11 @@ function App() {
   const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [jobOffset, setJobOffset] = useState(0);
+  const [imageJobs, setImageJobs] = useState<Job[]>([]);
+  const [imageOffset, setImageOffset] = useState(0);
+  const currentUser = useRef(user);
+  currentUser.current = user;
+  const closeDetails = useCallback(() => setSelected(null), []);
   const admin = user?.role === "owner" || user?.role === "admin";
   useEffect(() => {
     api<{ user: User; csrf_token: string }>("/api/v1/auth/me")
@@ -196,26 +208,32 @@ function App() {
   const refresh = useCallback(async () => {
     if (!user) return;
     try {
-      const [j, m, t] = await Promise.all([
+      const [j, m, t, images] = await Promise.all([
         api<{ items: Job[] }>(`/api/v1/jobs?limit=30&offset=${jobOffset}`),
-        api<{ data: Model[] }>("/api/v1/models"),
-        api<{ items: Template[] }>("/api/v1/templates"),
+        listAll<Model>("/api/v1/models", "data"),
+        listAll<Template>("/api/v1/templates"),
+        api<{ items: Job[] }>(
+          `/api/v1/jobs?task_type=ai.image&limit=30&offset=${imageOffset}`,
+        ),
       ]);
+      if (currentUser.current !== user) return;
       setJobs(j.items);
-      setModels(m.data);
-      setTemplates(t.items);
+      setModels(m);
+      setTemplates(t);
+      setImageJobs(images.items);
       if (admin) {
         const [n, s] = await Promise.all([
-          api<{ items: Node[] }>("/api/v1/nodes"),
-          api<{ items: Service[] }>("/api/v1/admin/services"),
+          listAll<Node>("/api/v1/nodes"),
+          listAll<Service>("/api/v1/admin/services"),
         ]);
-        setNodes(n.items);
-        setServices(s.items);
+        if (currentUser.current !== user) return;
+        setNodes(n);
+        setServices(s);
       }
     } catch (e) {
-      setError(message(e));
+      if (currentUser.current === user) setError(message(e));
     }
-  }, [user, admin, jobOffset]);
+  }, [user, admin, jobOffset, imageOffset]);
   useEffect(() => {
     if (!user) return;
     void refresh();
@@ -224,6 +242,7 @@ function App() {
   }, [refresh, user]);
   async function act(task: () => Promise<unknown>, success = "操作已保存") {
     setError("");
+    setNotice("");
     try {
       await task();
       setNotice(success);
@@ -239,7 +258,26 @@ function App() {
         <p>正在连接工作空间…</p>
       </div>
     );
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user)
+    return (
+      <Login
+        onLogin={(next) => {
+          setJobs([]);
+          setImageJobs([]);
+          setNodes([]);
+          setServices([]);
+          setTemplates([]);
+          setModels([]);
+          setSelected(null);
+          setJobOffset(0);
+          setImageOffset(0);
+          setError("");
+          setNotice("");
+          setView("jobs");
+          setUser(next);
+        }}
+      />
+    );
   const nav: [View, string, string][] = [
     ["jobs", "任务工作台", "▦"],
     ["chat", "Chat", "◌"],
@@ -306,7 +344,7 @@ function App() {
             ↗
           </button>
         </div>
-        <div className="signature">DESIGNED & BUILT BY FUBUKI</div>
+        <div className="signature">DESIGNED & BUILT BY Fubuki</div>
       </aside>
       <div className="main-wrap">
         <header className="topbar">
@@ -412,7 +450,7 @@ function App() {
                     上一页
                   </button>
                   <span>
-                    {jobOffset + 1}–{jobOffset + jobs.length}
+                    {jobs.length ? jobOffset + 1 : 0}–{jobOffset + jobs.length}
                   </span>
                   <button
                     disabled={jobs.length < 30}
@@ -428,7 +466,9 @@ function App() {
           {view === "images" && (
             <Images
               models={models}
-              jobs={jobs.filter((j) => j.task_type === "ai.image")}
+              jobs={imageJobs}
+              offset={imageOffset}
+              setOffset={setImageOffset}
               submit={async (data) => {
                 await act(
                   () => api("/api/v1/images/generations", "POST", data),
@@ -679,11 +719,7 @@ function App() {
         </footer>
       </div>
       {selected && (
-        <JobDetails
-          id={selected}
-          close={() => setSelected(null)}
-          changed={refresh}
-        />
+        <JobDetails id={selected} close={closeDetails} changed={refresh} />
       )}
     </div>
   );
@@ -763,6 +799,7 @@ function ComputeForm({
         setBusy(true);
         setError("");
         try {
+          if (!values.trim()) throw new Error("请输入至少一个数字");
           const numbers = values
             .trim()
             .split(/[\s,，]+/)
@@ -831,6 +868,7 @@ function JobDetails({
     { message: string; timestamp: number }[]
   >([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const dialog = useRef<HTMLElement>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     let live = true;
@@ -858,15 +896,48 @@ function JobDetails({
     };
   }, [id]);
   useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const listener = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
+      if (e.key === "Tab") {
+        const controls = Array.from(
+          dialog.current?.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]',
+          ) || [],
+        ).filter((element) => element.getClientRects().length);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (
+          e.shiftKey &&
+          (document.activeElement === first ||
+            !dialog.current?.contains(document.activeElement))
+        ) {
+          e.preventDefault();
+          last?.focus();
+        } else if (
+          !e.shiftKey &&
+          (document.activeElement === last ||
+            !dialog.current?.contains(document.activeElement))
+        ) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
     };
     document.addEventListener("keydown", listener);
-    return () => document.removeEventListener("keydown", listener);
+    return () => {
+      document.removeEventListener("keydown", listener);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
   }, [close]);
   return (
     <div className="modal-shade" onClick={close}>
       <section
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby="job-title"
@@ -878,7 +949,7 @@ function JobDetails({
             <h2 id="job-title">任务详情</h2>
             <small className="mono">{id}</small>
           </div>
-          <button autoFocus aria-label="关闭" onClick={close}>
+          <button aria-label="关闭" onClick={close}>
             ×
           </button>
         </div>
@@ -977,6 +1048,8 @@ function Chat({
         ),
       );
     } catch (e) {
+      setMessages(input.slice(0, -1));
+      setPrompt(prompt);
       setError(message(e));
     } finally {
       setBusy(false);
@@ -990,8 +1063,13 @@ function Chat({
           模型
           <select
             aria-label="Chat 模型"
+            disabled={busy}
             value={model || available[0]?.id || ""}
-            onChange={(e) => setModel(e.target.value)}
+            onChange={(e) => {
+              setModel(e.target.value);
+              setMessages([]);
+              setError("");
+            }}
           >
             <option disabled value="">
               暂无授权模型
@@ -1055,11 +1133,15 @@ function Images({
   jobs,
   submit,
   select,
+  offset,
+  setOffset,
 }: {
   models: Model[];
   jobs: Job[];
   submit: (data: unknown) => Promise<void>;
   select: (id: string) => void;
+  offset: number;
+  setOffset: (offset: number) => void;
 }) {
   const available = models.filter((m) => m.task_type === "ai.image");
   const [model, setModel] = useState("");
@@ -1133,6 +1215,23 @@ function Images({
           <span>结果与任务一起持久保存</span>
         </div>
         <JobTable jobs={jobs} select={select} />
+        <div className="pagination">
+          <button
+            disabled={!offset}
+            onClick={() => setOffset(Math.max(0, offset - 30))}
+          >
+            上一页
+          </button>
+          <span>
+            {jobs.length ? offset + 1 : 0}–{offset + jobs.length}
+          </span>
+          <button
+            disabled={jobs.length < 30}
+            onClick={() => setOffset(offset + 30)}
+          >
+            下一页
+          </button>
+        </div>
       </section>
     </>
   );
@@ -1219,9 +1318,9 @@ function Access({
     '{"templates":[],"nodes":[],"view_nodes":[],"jobs":[]}',
   );
   const load = useCallback(async () => {
-    setKeys((await api<{ items: typeof keys }>("/api/v1/keys")).items);
+    setKeys(await listAll<(typeof keys)[number]>("/api/v1/keys"));
     if (user.role === "owner")
-      setUsers((await api<{ items: User[] }>("/api/v1/admin/users")).items);
+      setUsers(await listAll<User>("/api/v1/admin/users"));
   }, [user.role]);
   useEffect(() => {
     void act(load, "凭证列表已更新");

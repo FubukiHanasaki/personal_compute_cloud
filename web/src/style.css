@@ -567,17 +567,20 @@ tbody tr:hover {
 }
 .node-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(295px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 295px), 1fr));
   gap: 18px;
   padding: 24px;
 }
 .node-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   border: 1px solid #2a394f;
   border-radius: 9px;
   background: #101926;
   padding: 20px;
 }
 .node-top {
+  flex-wrap: wrap;
   display: flex;
   gap: 11px;
   align-items: center;
@@ -763,6 +766,7 @@ tbody tr:hover {
   letter-spacing: 1px;
 }
 .chat-message p {
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   margin-top: 7px;
   line-height: 1.9;
@@ -827,6 +831,21 @@ tbody tr:hover {
 }
 .modal .panel-heading {
   padding: 0 0 20px;
+}
+.modal .panel-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.modal .panel-heading > button {
+  flex-shrink: 0;
+}
+.detail-status,
+.log,
+.artifact {
+  overflow-wrap: anywhere;
+}
+.artifact > div {
+  min-width: 0;
 }
 .modal h3 {
   margin: 25px 0 12px;

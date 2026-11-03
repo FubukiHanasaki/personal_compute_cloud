@@ -28,5 +28,5 @@ where = ["server", "agent"]
 [tool.pytest.ini_options]
 pythonpath = ["server", "agent"]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --basetemp=tmp/pytest"
 cache_dir = "tmp/pytest-cache"

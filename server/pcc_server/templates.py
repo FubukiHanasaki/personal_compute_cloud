@@ -1,5 +1,5 @@
 import math
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field
 from sqlalchemy import select
 from .db import get_db, transaction
@@ -152,8 +152,19 @@ def create_template(body: TemplateCreate, user=Depends(admin), db=Depends(get_db
 
 
 @router.get("/api/v1/templates")
-def list_templates(request: Request, user=Depends(current_user), db=Depends(get_db)):
+def list_templates(
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user=Depends(current_user),
+    db=Depends(get_db),
+):
     require_scope(request, "jobs:read")
+    templates = [
+        t
+        for t in db.scalars(select(TaskTemplate).order_by(TaskTemplate.id))
+        if accessible(user, t)
+    ]
     return {
         "items": [
             {
@@ -163,7 +174,8 @@ def list_templates(request: Request, user=Depends(current_user), db=Depends(get_
                 "worker": t.worker,
                 "config": t.config,
             }
-            for t in db.scalars(select(TaskTemplate).order_by(TaskTemplate.id))
-            if accessible(user, t)
-        ]
+            for t in templates[offset : offset + limit]
+        ],
+        "limit": limit,
+        "offset": offset,
     }

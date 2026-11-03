@@ -10,6 +10,46 @@ from conftest import register_node
 from test_jobs import claim
 
 
+def test_model_and_template_pagination_applies_after_authorization(env):
+    """Selectors must reach later pages without leaking private models. Fubuki."""
+    from fastapi.testclient import TestClient
+    from test_auth import login
+
+    app, client, auth, _ = env
+    for i in range(4):
+        assert (
+            client.post(
+                "/api/v1/admin/templates",
+                headers=auth,
+                json={
+                    "id": f"model-{i}",
+                    "name": f"模型{i}",
+                    "kind": "ai.chat",
+                    "worker": "synthetic.chat",
+                    "model": f"model-{i}",
+                    "public": i % 2 == 1,
+                },
+            ).status_code
+            == 201
+        )
+    client.post(
+        "/api/v1/admin/users",
+        headers=auth,
+        json={
+            "username": "model-user",
+            "password": "model-user-password-123",
+        },
+    )
+    with TestClient(app) as user:
+        login(user, "model-user", "model-user-password-123")
+        for path, field in (("/api/v1/templates", "items"), ("/api/v1/models", "data")):
+            page = user.get(path + "?limit=1&offset=1").json()
+            assert [row["id"] for row in page[field]] == ["model-3"]
+            assert page["limit"] == 1 and page["offset"] == 1
+            assert user.get(path + "?limit=101").status_code == 422
+            assert user.get(path + "?offset=-1").status_code == 422
+
+
 def test_synthetic_chat_sse_and_async_image_protocol(env, tmp_path):
     if not isolation_capabilities():
         pytest.skip("Requires Linux nonprivileged bubblewrap")

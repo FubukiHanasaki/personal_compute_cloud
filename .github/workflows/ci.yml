@@ -31,7 +31,9 @@ jobs:
       - run: uv run pytest
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
-      - run: npm ci --prefix web && npm run build --prefix web
+      - run: python scripts/dev.py setup
+      - run: npm run test:api --prefix web
+      - run: npm run build --prefix web
 
   agent-platforms:
     strategy:

@@ -26,7 +26,7 @@ curl "$PCC_URL/api/v1/jobs/$PCC_JOB_ID/artifacts" -H "Authorization: Bearer $PCC
 
 同一用户的幂等键去重；相同键配不同内容返回 409。输入只接受白名单参数，未知字段和命令/源码/路径均不允许。无兼容节点时保持 queued；负载过高、额度不足和私人策略都会阻止领取，任务面板展示实际状态。
 
-列表支持 limit（最大 100）与 offset；`/api/v1/models` 按 OpenAI 习惯返回 data，不分页；模板列表有界于管理员配置。错误格式：`{"error":{"code":"...","message":"...","request_id":"..."}}`，响应头包含 `X-Request-ID`。5xx 不返回堆栈。
+列表支持 limit（默认 50，最大 100）与 offset；`/api/v1/models` 使用 data，其他列表使用 items。任务列表可用 task_type（compute.stats / ai.chat / ai.image）先筛选再分页；图片历史独立于计算任务页。前端模型、模板和管理资源选择器会读取后续页。错误格式：`{"error":{"code":"...","message":"...","request_id":"..."}}`，响应头包含 `X-Request-ID`。5xx 不返回堆栈。
 
 ## 身份
 

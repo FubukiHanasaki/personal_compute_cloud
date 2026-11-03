@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import Field
 from sqlalchemy import select
@@ -43,12 +43,18 @@ def find_model(db, model, kind, user):
 
 
 @router.get("/api/v1/models")
-def models(request: Request, user=Depends(current_user), db=Depends(get_db)):
+def models(
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user=Depends(current_user),
+    db=Depends(get_db),
+):
     require_scope(request, "models:read")
     nodes = db.scalars(select(Node)).all()
     templates = [
         t
-        for t in db.scalars(select(TaskTemplate))
+        for t in db.scalars(select(TaskTemplate).order_by(TaskTemplate.id))
         if t.kind.startswith("ai.") and accessible(user, t)
     ]
     return {
@@ -67,8 +73,10 @@ def models(request: Request, user=Depends(current_user), db=Depends(get_db)):
                     for n in nodes
                 ),
             }
-            for t in templates
-        ]
+            for t in templates[offset : offset + limit]
+        ],
+        "limit": limit,
+        "offset": offset,
     }
 
 

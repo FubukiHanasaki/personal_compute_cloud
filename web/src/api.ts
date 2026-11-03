@@ -90,6 +90,16 @@ export async function api<T>(
   }
   return (response.status === 204 ? undefined : await response.json()) as T;
 }
+export async function listAll<T>(path: string, field = "items"): Promise<T[]> {
+  const items: T[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await api<Record<string, T[]>>(
+      `${path}?limit=100&offset=${offset}`,
+    );
+    items.push(...page[field]);
+    if (page[field].length < 100) return items;
+  }
+}
 export async function streamChat(
   model: string,
   messages: { role: string; content: string }[],
@@ -126,7 +136,7 @@ export async function streamChat(
           onContent(data.choices?.[0]?.delta?.content || "");
         }
       }
-      if (done) break;
+      if (done) throw new Error("响应意外中断；请在任务工作台核对结果后重试");
     }
   } finally {
     reader.releaseLock();
