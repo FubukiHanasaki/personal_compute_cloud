@@ -17,6 +17,7 @@ import psutil
 from .errors import WorkerStopUnconfirmed
 from .windows_sandbox import (
     Accounting,
+    BOOL,
     DWORD,
     ExtendedLimits,
     HANDLE,
@@ -34,7 +35,10 @@ MAX_PROCESSES = 256
 def limits(resources, cpus):
     """Job memory is the aggregate committed memory of the process tree."""
     cpu, memory = float(resources["cpu"]), int(resources["memory_mb"])
-    if not 0 < cpu <= 65536 or memory < 128:
+    if (
+        not 0 < cpu <= 65536
+        or not 128 <= memory <= (2 ** (8 * C.sizeof(SIZE)) - 1) // 2**20
+    ):
         raise ValueError("Insufficient enforceable model resources")
     info = ExtendedLimits()
     info.basic.flags = 0x2000 | 0x200 | 0x100 | 0x8
@@ -200,18 +204,41 @@ class WindowsManagedProcess:
             return list((SIZE * listed).from_buffer(data, 8))
 
     def owns_listener(self, port):
-        for pid in self.process_ids():
-            try:
-                if any(
-                    c.status == psutil.CONN_LISTEN
-                    and c.laddr.ip == "127.0.0.1"
-                    and c.laddr.port == port
-                    for c in psutil.Process(pid).net_connections(kind="tcp")
-                ):
-                    return True
-            except psutil.NoSuchProcess:
-                continue
+        with self.lock:
+            for pid in self.process_ids():
+                # The Job PID snapshot can become stale. Query the actual
+                # process object before trusting any PID-based socket lookup.
+                handle = self.kernel.OpenProcess(0x1000 | 0x100000, False, pid)
+                if not handle:
+                    if C.get_last_error() == 87:  # exited before OpenProcess
+                        continue
+                    raise C.WinError(C.get_last_error())
+                try:
+                    member = BOOL()
+                    checked(
+                        self.kernel.IsProcessInJob(handle, self.job, C.byref(member))
+                    )
+                    if not member.value or not self._alive(handle):
+                        continue
+                    listening = any(
+                        c.status == psutil.CONN_LISTEN
+                        and c.laddr.ip == "127.0.0.1"
+                        and c.laddr.port == port
+                        for c in psutil.Process(pid).net_connections(kind="tcp")
+                    )
+                    if listening and self._alive(handle):
+                        return True
+                except psutil.NoSuchProcess:
+                    continue
+                finally:
+                    checked(self.kernel.CloseHandle(handle))
         return False
+
+    def _alive(self, handle):
+        state = self.kernel.WaitForSingleObject(handle, 0)
+        if state == 0xFFFFFFFF:
+            raise C.WinError(C.get_last_error())
+        return state == 258  # WAIT_TIMEOUT; exited objects must never be trusted
 
     def stop(self):
         with self.lock:

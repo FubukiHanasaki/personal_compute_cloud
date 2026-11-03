@@ -4,6 +4,8 @@
 
 Windows 节点已接入受管 Ollama Chat 与 ComfyUI 图片模型的同一套注册、能力发现、服务预热、按需推理、空闲卸载、取消和停止核对流程。Server API/模板结构与 Linux 保持一致，无需另一套控制面。支持 CPU 或显式选择的一张 NVIDIA CUDA GPU；AMD/Vulkan 适配不在本轮实现范围，避免使用未受当前资源报告覆盖的设备。
 
+最新逻辑与安全复查已修复监听 PID 复用、关停并发、资源额度复用、预热负载保护、响应上限和图片临时数据积累问题，定向模拟检查 57 项通过、7 项 Windows 用例跳过。详见 [复查记录](windows-models-review.md)。下文原 29 项结果保留为初次实现记录。
+
 ## 准备与配置
 
 1. 使用 64 位 Windows 和 Python 3.12–3.14，按 [Agent 安装](agent.md) 安装到专用标准账号；运行时不使用 Administrator/最高权限任务。
@@ -34,6 +36,8 @@ CPU 模式保留 GPU 配置为空，禁用 CUDA/HIP/ROCm/Vulkan 自动设备选�
 
 显式配置 GPU 后，Ollama 未报告模型显存占用或 ComfyUI 未报告 CUDA 设备时拒绝静默回退 CPU。已有 Agent 升级时先停止旧进程，用其 venv 执行 python -m pip install --cache-dir tmp/pip-cache --upgrade .，合并配置后再启动，不重复初始化或覆盖原注册身份。
 
+GPU 字段现在只接受空值或一张完整的 GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx UUID。升级前若使用设备序号、缩写或多个设备，须替换为 nvidia-smi 返回的完整 UUID；配置错误会拒绝启动。
+
 每个后端启动一个独立命名 Job。CPU 使用硬比例上限；内存限制覆盖每个进程及整个 Job 的提交内存；活动进程数最多 256，未设置 breakaway。进程在创建时加入 Job 后才恢复运行，只继承空 stdin 和日志句柄。启动环境采用白名单，模型 HOME/APPDATA/TEMP 位于工作目录，不继承 PCC_SECRET、代理或节点凭证环境。
 
 受管模型运行时仍使用节点账号，属于管理员批准代码；这些限制不等价于 compute 的 AppContainer 文件/网络沙箱。模型只监听本机回环，不开放入站端口，不允许云端用户指定本机可执行文件、任意图或路径。
@@ -49,7 +53,7 @@ CPU 模式保留 GPU 配置为空，禁用 CUDA/HIP/ROCm/Vulkan 自动设备选�
 ```powershell
 # 在标准账号下安装测试依赖：
 & tmp\agent-venv\Scripts\python.exe -m pip install --cache-dir tmp\pip-cache '.[test]'
-& tmp\agent-venv\Scripts\python.exe -m pytest tests/test_managed_process.py tests/test_windows_models_native.py -q
+& tmp\agent-venv\Scripts\python.exe -m pytest tests/test_managed_process.py tests/test_windows_model_review.py tests/test_windows_models_native.py -q
 # 使用已批准且已安装的本机模型，显式选择真实模型测试：
 $env:PCC_WINDOWS_MODEL_CONFIG = (Resolve-Path agent.toml).Path
 & tmp\agent-venv\Scripts\python.exe -m pytest tests/test_windows_models_native.py -k opt_in_real -q

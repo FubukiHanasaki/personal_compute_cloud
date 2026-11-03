@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+import json
 import os
 from pathlib import Path
 import uuid
@@ -10,6 +11,7 @@ import threading
 import time
 import httpx
 from .managed_process import ManagedProcess, environment
+from .errors import WorkerStopUnconfirmed
 
 
 def check_loopback_port(port):
@@ -27,6 +29,7 @@ class OllamaBackend:
     def __init__(self, config, model, resources):
         self.config, self.model, self.resources = config, model, resources
         self.process = None
+        self.port = config.ollama_port
         self.cancelled = threading.Event()
         self.lock = threading.RLock()
         self.client = httpx.Client(
@@ -44,6 +47,50 @@ class OllamaBackend:
     def _require_listener(self, port):
         if not self.controller.listener_ready(port):
             raise RuntimeError("Managed loopback listener is unavailable or not owned")
+
+    def _read_http(
+        self, method, path, max_bytes, *, timeout=5, deadline=None, **kwargs
+    ):
+        until = deadline if deadline is not None else time.monotonic() + timeout
+
+        def remaining():
+            if self.cancelled.is_set():
+                raise RuntimeError("Backend request was stopped")
+            seconds = until - time.monotonic()
+            if seconds <= 0:
+                raise RuntimeError("Backend request timed out")
+            return seconds
+
+        seconds = remaining()
+        self._require_listener(self.port)
+        with self.client.stream(
+            method,
+            path,
+            timeout=min(timeout, seconds),
+            headers={"Accept-Encoding": "identity"},
+            **kwargs,
+        ) as response:
+            response.raise_for_status()
+            if (
+                response.headers.get("content-encoding", "identity").lower()
+                != "identity"
+            ):
+                raise RuntimeError("Compressed backend responses are not accepted")
+            content = bytearray()
+            # A bytearray also bounds overhead for arbitrarily small chunks.
+            for chunk in response.iter_bytes():
+                remaining()
+                if len(content) + len(chunk) > max_bytes:
+                    raise RuntimeError("Backend response exceeds output limit")
+                content.extend(chunk)
+            remaining()
+            return bytes(content)
+
+    def _json(self, method, path, *, max_bytes=2**20, **kwargs):
+        result = json.loads(self._read_http(method, path, max_bytes, **kwargs))
+        if not isinstance(result, dict):
+            raise RuntimeError("Invalid backend JSON response")
+        return result
 
     def start(self):
         from .platform import managed_isolation_available
@@ -100,29 +147,24 @@ class OllamaBackend:
                 time.sleep(0.1)
                 continue
             try:
-                response = self.client.get("/api/version", timeout=1)
-                response.raise_for_status()
+                self._json("GET", "/api/version", timeout=1)
                 break
             except httpx.HTTPError:
                 time.sleep(0.1)
         else:
             raise RuntimeError("Managed backend health check timed out")
         # Explicit load also verifies that the administrator has pre-installed the model.
-        self._require_listener(self.config.ollama_port)
-        response = self.client.post(
+        self._json(
+            "POST",
             "/api/generate",
+            timeout=120,
             json={"model": self.model, "prompt": "", "stream": False, "keep_alive": -1},
         )
-        response.raise_for_status()
         self.check_vram()
 
     def check_vram(self):
-        self._require_listener(self.config.ollama_port)
-        response = self.client.get("/api/ps", timeout=3)
-        response.raise_for_status()
-        used = sum(
-            int(m.get("size_vram", 0)) for m in response.json().get("models", [])
-        )
+        response = self._json("GET", "/api/ps", timeout=3)
+        used = sum(int(m.get("size_vram", 0)) for m in response.get("models", []))
         if self.config.ollama_gpu_device and used <= 0:
             self.stop()
             raise RuntimeError(
@@ -132,12 +174,14 @@ class OllamaBackend:
             self.stop()
             raise RuntimeError("Managed model exceeded its approved VRAM reservation")
 
-    def chat(self, messages):
+    def chat(self, messages, max_bytes=2**20, timeout_seconds=120):
         if self.cancelled.is_set():
             raise RuntimeError("Backend stopped")
-        self._require_listener(self.config.ollama_port)
-        response = self.client.post(
+        response = self._json(
+            "POST",
             "/api/chat",
+            timeout=min(120, timeout_seconds),
+            max_bytes=min(max_bytes * 6 + 65536, 20 * 2**20),
             json={
                 "model": self.model,
                 "messages": messages,
@@ -145,17 +189,19 @@ class OllamaBackend:
                 "keep_alive": -1,
             },
         )
-        response.raise_for_status()
+        content = response["message"]["content"]
+        if not isinstance(content, str) or len(content.encode("utf-8")) > max_bytes:
+            raise RuntimeError("Chat response exceeds output limit")
         self.check_vram()
         return {
-            "result": {"content": response.json()["message"]["content"]},
+            "result": {"content": content},
             "artifacts": [],
         }
 
     def unload(self):
         if self.process and self.process.poll() is None:
-            self._require_listener(self.config.ollama_port)
-            response = self.client.post(
+            self._json(
+                "POST",
                 "/api/generate",
                 json={
                     "model": self.model,
@@ -165,7 +211,6 @@ class OllamaBackend:
                 },
                 timeout=10,
             )
-            response.raise_for_status()
 
     def stop(self):
         self.cancelled.set()
@@ -195,6 +240,8 @@ class ServiceManager:
         self.config, self.factory, self.clock = config, factory, clock
         self.services = {}
         self.lock = threading.RLock()
+        self.closed = False
+        self.capabilities = {}
 
     def sync(self, commands):
         with self.lock:
@@ -230,6 +277,8 @@ class ServiceManager:
 
     def acquire(self, definition_id):
         with self.lock:
+            if self.closed:
+                raise RuntimeError("Service manager was stopped")
             service = self.services[definition_id]
             if (
                 service.desired_state == "stopped"
@@ -239,16 +288,13 @@ class ServiceManager:
                 raise RuntimeError(
                     "Service is draining, busy or awaiting stop confirmation"
                 )
+            if service.config["worker"].startswith(("ollama:", "comfyui:")):
+                requested = service.config["resources"]
+                if self._exceeds_budget(service):
+                    raise RuntimeError("Service exceeds local allocatable resources")
             if service.backend is None and service.config["worker"].startswith(
                 ("ollama:", "comfyui:")
             ):
-                requested = service.config["resources"]
-                if (
-                    requested["vram_mb"] > self.config.allocatable_vram_mb
-                    or requested["memory_mb"] > self.config.allocatable_memory_mb
-                    or requested["cpu"] > self.config.allocatable_cpu
-                ):
-                    raise RuntimeError("Service exceeds local allocatable resources")
                 # One managed Ollama server owns the configured loopback port/GPU lock.
                 others = [
                     s for s in self.services.values() if s is not service and s.backend
@@ -274,17 +320,39 @@ class ServiceManager:
             service.last_active = self.clock()
             return service
 
+    def _exceeds_budget(self, service):
+        return service.config["worker"].startswith(("ollama:", "comfyui:")) and any(
+            service.config["resources"][key]
+            > min(
+                getattr(self.config, "allocatable_" + key),
+                self.capabilities.get("allocatable", {}).get(
+                    key, getattr(self.config, "allocatable_" + key)
+                ),
+            )
+            for key in ("cpu", "memory_mb", "vram_mb")
+        )
+
     def ready(self, service):
-        if service.state == "starting":
-            service.backend.start()
         with self.lock:
+            if self.closed:
+                raise RuntimeError("Service manager was stopped")
+            backend, starting = service.backend, service.state == "starting"
+        if starting:
+            backend.start()
+        with self.lock:
+            if self.closed or service.backend is not backend:
+                raise RuntimeError("Service was stopped during startup")
             service.state = "ready"
             service.error = None
+            return backend
 
     def release(self, service, error=None):
         with self.lock:
             service.active_requests = max(0, service.active_requests - 1)
             service.last_active = self.clock()
+            if self.closed:
+                self._stop(service)
+                return
             service.state = "error" if error else "idle"
             service.error = type(error).__name__ if error else None
             if error:
@@ -312,11 +380,14 @@ class ServiceManager:
 
     def tick(self):
         with self.lock:
+            if self.closed:
+                return
             for service in self.services.values():
                 idle = self.clock() - service.last_active >= service.idle_seconds
                 if not service.active_requests and (
                     service.desired_state == "stopped"
                     or idle
+                    or self._exceeds_budget(service)
                     or (service.state == "error" and service.backend is not None)
                 ):
                     self._stop(service)
@@ -325,6 +396,9 @@ class ServiceManager:
                     and service.state == "stopped"
                     and not idle
                     and self.config.mode not in {"maintenance", "offline"}
+                    and self.capabilities.get("cpu_load", 0) < self.config.max_cpu_load
+                    and self.capabilities.get("memory_load", 0)
+                    < self.config.max_memory_load
                 ):
                     # Reserve synchronously, load outside the heartbeat thread/lock.
                     try:
@@ -348,11 +422,23 @@ class ServiceManager:
 
     def stop_all(self):
         with self.lock:
+            self.closed = True
+            failures = []
             for service in self.services.values():
-                if service.backend:
-                    service.backend.stop()
+                try:
+                    if service.backend:
+                        service.backend.stop()
+                except Exception as exc:
+                    service.state = "error"
+                    service.error = type(exc).__name__
+                    failures.append(exc)
+                    continue
                 service.backend = None
                 service.state = "stopped"
+            if failures:
+                raise WorkerStopUnconfirmed(
+                    "Managed service stop requires reconciliation"
+                ) from failures[0]
 
 
 class InferenceWorker:
@@ -365,14 +451,18 @@ class InferenceWorker:
     def _run(self, payload):
         error = None
         try:
-            self.manager.ready(self.service)
+            backend = self.manager.ready(self.service)
             if payload["template"]["worker"].startswith("comfyui:"):
-                return self.service.backend.generate(
+                return backend.generate(
                     payload["input"],
                     payload["limits"]["output_bytes"],
                     payload["limits"]["timeout_seconds"],
                 )
-            return self.service.backend.chat(payload["input"]["messages"])
+            return backend.chat(
+                payload["input"]["messages"],
+                payload["limits"]["output_bytes"],
+                payload["limits"]["timeout_seconds"],
+            )
         except Exception as exc:
             error = exc
             raise
@@ -398,5 +488,9 @@ class InferenceWorker:
             self.service.backend.stop()
 
     def close(self):
-        self.stop()
-        self.executor.shutdown(wait=True)
+        try:
+            self.stop()
+        finally:
+            # A failed stop must preserve the backend/journal, but must not
+            # leave an idle executor behind or wait forever for a live call.
+            self.executor.shutdown(wait=self.future.done(), cancel_futures=True)

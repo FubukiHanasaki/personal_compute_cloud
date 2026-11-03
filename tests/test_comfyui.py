@@ -1,5 +1,7 @@
 import base64
 import json
+from pathlib import Path
+from types import SimpleNamespace
 import httpx
 import pytest
 from pcc_agent.config import AgentConfig, ComfyWorkflow
@@ -119,20 +121,40 @@ def test_image_adapter_uses_native_queue_and_bounded_png_download(tmp_path):
             return httpx.Response(
                 200, json={"devices": [{"type": "cuda", "torch_vram_total": 1000}]}
             )
+        if request.url.path == "/history":
+            assert json.loads(request.content) == {"delete": ["job-123"]}
+            return httpx.Response(200)  # ComfyUI uses an empty success body.
         raise AssertionError(request.url.path)
 
     backend = ComfyUIBackend(
         cfg, "local-image", {"cpu": 1, "memory_mb": 512, "vram_mb": 1024}
+    )
+    backend.controller = SimpleNamespace(
+        listener_ready=lambda port: True, stop=lambda: None
     )
     backend.client.close()
     backend.client = httpx.Client(
         base_url="http://127.0.0.1:8189", transport=httpx.MockTransport(transport)
     )
     try:
+        for name in ("output", "temp"):
+            directory = Path(backend.staging.name) / name
+            directory.mkdir()
+            (directory / "extra.png").write_bytes(png)
         result = backend.generate({"prompt": "a sunset", "size": "256x256"}, 1024)
         assert not result["result"]["synthetic"]
         assert base64.b64decode(result["artifacts"][0]["data_base64"]) == png
-        assert paths == ["/prompt", "/history/job-123", "/view", "/system_stats"]
+        assert paths == [
+            "/prompt",
+            "/history/job-123",
+            "/view",
+            "/system_stats",
+            "/history",
+        ]
+        assert all(
+            not list((Path(backend.staging.name) / name).iterdir())
+            for name in ("output", "temp")
+        )
         with pytest.raises(RuntimeError, match="limit"):
             backend.generate({"prompt": "a sunset", "size": "256x256"}, 8)
     finally:
@@ -149,6 +171,9 @@ def test_image_history_wait_is_bounded_even_without_agent_guard(monkeypatch, tmp
     monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     backend = ComfyUIBackend(
         cfg, "local-image", {"cpu": 1, "memory_mb": 512, "vram_mb": 1024}
+    )
+    backend.controller = SimpleNamespace(
+        listener_ready=lambda port: True, stop=lambda: None
     )
     backend.client.close()
     backend.client = httpx.Client(

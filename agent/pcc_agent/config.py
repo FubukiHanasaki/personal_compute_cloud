@@ -3,6 +3,8 @@ import tomllib
 from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+GPU_DEVICE_PATTERN = r"^(?:GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})?$"
+
 
 class ComfyWorkflow(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -37,12 +39,12 @@ class AgentConfig(BaseModel):
     ollama_models: list[str] = []
     ollama_model_root: Path = Path("tmp/ollama-models")
     ollama_port: int = Field(default=11435, ge=1024, le=65535)
-    ollama_gpu_device: str = ""
+    ollama_gpu_device: str = Field(default="", pattern=GPU_DEVICE_PATTERN)
     ollama_vram_mb: int = Field(default=0, ge=0)
     comfyui_python: str = ""
     comfyui_script: str = ""
     comfyui_port: int = Field(default=8189, ge=1024, le=65535)
-    comfyui_gpu_device: str = ""
+    comfyui_gpu_device: str = Field(default="", pattern=GPU_DEVICE_PATTERN)
     comfyui_workflows: dict[str, ComfyWorkflow] = Field(default_factory=dict)
     service_idle_seconds: int = Field(default=300, ge=1)
 

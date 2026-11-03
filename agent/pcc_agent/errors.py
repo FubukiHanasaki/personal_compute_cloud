@@ -2,4 +2,4 @@
 
 
 class WorkerStopUnconfirmed(RuntimeError):
-    """A constructor failed without confirming that its child has stopped."""
+    """Process cleanup failed without confirming that its children have stopped."""

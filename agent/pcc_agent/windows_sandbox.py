@@ -172,6 +172,8 @@ def api():
         "SetInformationJobObject": ([HANDLE, C.c_int, HANDLE, DWORD], BOOL),
         "QueryInformationJobObject": ([HANDLE, C.c_int, HANDLE, DWORD, HANDLE], BOOL),
         "AssignProcessToJobObject": ([HANDLE, HANDLE], BOOL),
+        "OpenProcess": ([DWORD, BOOL, DWORD], HANDLE),
+        "IsProcessInJob": ([HANDLE, HANDLE, C.POINTER(BOOL)], BOOL),
         "TerminateJobObject": ([HANDLE, DWORD], BOOL),
         "CloseHandle": ([HANDLE], BOOL),
         "LocalFree": ([HANDLE], HANDLE),

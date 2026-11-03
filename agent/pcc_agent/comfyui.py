@@ -5,6 +5,7 @@ import copy
 import json
 from pathlib import Path
 import re
+import shutil
 import time
 import tempfile
 import uuid
@@ -65,6 +66,7 @@ def approved_workflow(config, model, data):
 class ComfyUIBackend(OllamaBackend):
     def __init__(self, config, model, resources):
         super().__init__(config, model, resources)
+        self.port = config.comfyui_port
         self.staging = tempfile.TemporaryDirectory(
             prefix="comfyui-", dir=config.work_root
         )
@@ -166,10 +168,7 @@ class ComfyUIBackend(OllamaBackend):
         raise RuntimeError("ComfyUI health check timed out")
 
     def check_vram(self):
-        self._require_listener(self.config.comfyui_port)
-        response = self.client.get("/system_stats")
-        response.raise_for_status()
-        devices = response.json().get("devices", [])
+        devices = self._json("GET", "/system_stats").get("devices", [])
         if self.config.comfyui_gpu_device and not any(
             device.get("type") == "cuda" for device in devices
         ):
@@ -188,23 +187,28 @@ class ComfyUIBackend(OllamaBackend):
         self._require_listener(self.config.comfyui_port)
         until = time.monotonic() + max(1, timeout_seconds)
         graph = approved_workflow(self.config, self.model, data)
-        response = self.client.post(
-            "/prompt", json={"prompt": graph, "client_id": uuid.uuid4().hex}
+        response = self._json(
+            "POST",
+            "/prompt",
+            deadline=until,
+            json={"prompt": graph, "client_id": uuid.uuid4().hex},
         )
-        response.raise_for_status()
-        prompt_id = response.json()["prompt_id"]
+        prompt_id = response["prompt_id"]
         if not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", prompt_id):
             raise RuntimeError("Invalid ComfyUI prompt identity")
         while not self.cancelled.is_set():
             if time.monotonic() >= until:
                 raise RuntimeError("Image generation timed out")
-            self._require_listener(self.config.comfyui_port)
-            response = self.client.get("/history/" + prompt_id)
-            response.raise_for_status()
-            history = response.json().get(prompt_id)
+            response = self._json("GET", "/history/" + prompt_id, deadline=until)
+            history = response.get(prompt_id)
             if history:
                 if history.get("status", {}).get("status_str") == "error":
                     raise RuntimeError("Approved image workflow failed")
+                # History can contain partial outputs while other nodes still
+                # run. Do not release the service or remove files until done.
+                if not history.get("status", {}).get("completed"):
+                    self.cancelled.wait(0.2)
+                    continue
                 for output in history.get("outputs", {}).values():
                     for image in output.get("images", []):
                         name = image.get("filename", "")
@@ -222,29 +226,21 @@ class ComfyUIBackend(OllamaBackend):
                             raise RuntimeError(
                                 "Backend returned an unsafe artifact path"
                             )
-                        chunks, length = [], 0
-                        self._require_listener(self.config.comfyui_port)
-                        with self.client.stream(
+                        png = self._read_http(
                             "GET",
                             "/view",
+                            max_bytes,
+                            deadline=until,
                             params={
                                 "filename": name,
                                 "subfolder": subfolder,
                                 "type": "output",
                             },
-                        ) as result:
-                            result.raise_for_status()
-                            for chunk in result.iter_bytes():
-                                length += len(chunk)
-                                if length > max_bytes:
-                                    raise RuntimeError(
-                                        "Generated image exceeds artifact limit"
-                                    )
-                                chunks.append(chunk)
-                        png = b"".join(chunks)
+                        )
                         if not png.startswith(b"\x89PNG\r\n\x1a\n"):
                             raise RuntimeError("Backend result is not a PNG")
                         self.check_vram()
+                        self._cleanup_completed(prompt_id, until)
                         return {
                             "result": {
                                 "model": self.model,
@@ -265,12 +261,34 @@ class ComfyUIBackend(OllamaBackend):
 
     def unload(self):
         if self.process and self.process.poll() is None:
-            self._require_listener(self.config.comfyui_port)
-            response = self.client.post(
-                "/free", json={"unload_models": True, "free_memory": True}
+            self._read_http(
+                "POST",
+                "/free",
+                65536,
+                json={"unload_models": True, "free_memory": True},
             )
-            response.raise_for_status()
+
+    def _cleanup_completed(self, prompt_id, deadline):
+        with self.lock:
+            # Bound retained server history and local artifacts across a busy
+            # service's lifetime, including extra outputs in approved graphs.
+            self._read_http(
+                "POST",
+                "/history",
+                65536,
+                json={"delete": [prompt_id]},
+                deadline=deadline,
+            )
+            root = Path(self.staging.name).resolve(strict=True)
+            for name in ("output", "temp"):
+                path = root / name
+                if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+                    raise RuntimeError("Unsafe managed staging directory")
+                if path.exists():
+                    shutil.rmtree(path)
+                path.mkdir()
 
     def stop(self):
-        super().stop()
-        self.staging.cleanup()
+        with self.lock:
+            super().stop()
+            self.staging.cleanup()

@@ -95,6 +95,7 @@ class Agent:
         response.raise_for_status()
         self.identity["owner_id"] = response.json().get("owner_id")
         self.services.config = config
+        self.services.capabilities = caps
         self.services.sync(response.json().get("services", []))
         return response.json()
 

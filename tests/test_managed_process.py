@@ -26,10 +26,13 @@ def test_explicit_gpu_refuses_silent_cpu_fallback(tmp_path, kind):
     from test_comfyui import config
 
     cfg = config(tmp_path)
-    cfg.ollama_gpu_device = cfg.comfyui_gpu_device = "GPU-approved-local"
+    cfg.ollama_gpu_device = cfg.comfyui_gpu_device = (
+        "GPU-12345678-1234-1234-1234-123456789abc"
+    )
     backend = (OllamaBackend if kind == "ollama" else ComfyUIBackend)(
         cfg, "local-image", {"cpu": 1, "memory_mb": 1024, "vram_mb": 1024}
     )
+    backend.controller = Controller()
     backend.client.close()
     backend.client = httpx.Client(
         base_url="http://localhost",
@@ -137,7 +140,16 @@ def kernel(monkeypatch):
             return 1
 
         def WaitForSingleObject(self, *args):
-            return 0
+            return 258 if args[0] == 105 else 0
+
+        def OpenProcess(self, access, inherit, pid):
+            assert access == 0x101000 and not inherit
+            return 105
+
+        def IsProcessInJob(self, handle, job, member):
+            assert handle == 105 and job == 100
+            member._obj.value = 1
+            return 1
 
         def GetExitCodeProcess(self, handle, code):
             code._obj.value = 0
@@ -349,6 +361,39 @@ def test_listener_must_belong_to_a_job_process(kernel, monkeypatch):
     assert process.owns_listener(11435)
     assert not process.owns_listener(11434)
     assert requested == [104, 104]
+    assert kernel.closed == [105, 105]
+
+
+@pytest.mark.parametrize("case", ["reused_pid", "exited_before", "exited_during"])
+def test_stale_job_pid_cannot_authorize_a_foreign_listener(kernel, monkeypatch, case):
+    import pcc_agent.windows_managed as module
+
+    process = WindowsManagedProcess({"cpu": 1, "memory_mb": 512})
+    process.job = 100
+    calls = []
+
+    def member(handle, job, result):
+        result._obj.value = case != "reused_pid"
+        return 1
+
+    states = iter([0] if case == "exited_before" else [258, 0])
+    monkeypatch.setattr(kernel, "IsProcessInJob", member)
+    monkeypatch.setattr(kernel, "WaitForSingleObject", lambda *args: next(states))
+
+    def owner(pid):
+        calls.append(pid)
+        return SimpleNamespace(
+            net_connections=lambda kind: [
+                SimpleNamespace(
+                    status="LISTEN", laddr=SimpleNamespace(ip="127.0.0.1", port=11435)
+                )
+            ]
+        )
+
+    monkeypatch.setattr(module.psutil, "Process", owner)
+    assert not process.owns_listener(11435)
+    assert calls == ([104] if case == "exited_during" else [])
+    assert kernel.closed == [105]
 
 
 def test_managed_windows_environment_does_not_inherit_credentials(
