@@ -34,4 +34,4 @@ Ollama 为节点管理员批准的本地二进制和模型，不接受云端可�
 
 ## 已知发布限制
 
-实际 Windows 安装/断网重连、Windows 隔离执行、真实图像模型、生产 Docker/Caddy HTTPS、移动端浏览器 QA、完整备份恢复演练仍需验收。合成 Worker 验证协议，不代表 GPU 或模型质量通过。基础保护已实现手动模式和 CPU/RAM 阈值；游戏进程/CUDA 活动检测属于 V1，当前未实现。
+实际 Windows 安装/断网重连与隔离、生产 Docker/公网 ACME/NAT、移动端浏览器 QA、生产卷备份恢复仍需外部环境验收。真实 Ollama 和 ComfyUI GPU 以及本地验证 TLS、PostgreSQL 恢复已有证据；合成 Worker 仅代表协议验证，不能代替这些证据或承诺模型质量。ComfyUI 关闭动态显存分配器，使用 Torch 池预算并检查后端报告；这不等同于允许任意第三方 CUDA 代码的 GPU 安全沙箱。基础保护已实现手动模式和 CPU/RAM 阈值；游戏进程/CUDA 活动检测属于 V1，当前未实现。

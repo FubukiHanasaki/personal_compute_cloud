@@ -71,3 +71,9 @@ TypeScript 类型检查和 Vite 生产构建通过，后端 16 项回归通过�
 运行：`python3 scripts/dev.py setup / init-dev / migrate / build / serve` 按 README 顺序；生产用 `.env.example` 和 Docker Compose。临时运行时、权重、数据库、缓存、虚拟环境和构建产物全部留在忽略的 tmp/。Git 采用 P0–P6 分阶段提交，作者 Fubuki，开发版标签 v0.1.0-dev。
 
 **尚未完成发布验收：** Windows 实机接入/等价受限执行器、ComfyUI 真实图片权重、Docker/Caddy 真机 HTTPS 与重启持久性、备份恢复演练、浏览器及移动端交互验证。当前是可运行开发版，不宣称 A01–A14 全通过。架构未引入额外队列、微服务或硬件型号调度分支。
+
+## P6 后续补齐 · 2026-11-03
+
+上述阶段记录为原交付快照。本轮补齐 Windows AppContainer/Job Object 执行、独立运行时和 SID ACL、停止后 profile 清理，增加实际 TLS/重启持久性测试以及可执行的流式备份/单事务恢复；完成 PostgreSQL 清空恢复演练。ComfyUI 已使用真实 SD1.5 权重完成 GPU 推理与普通用户 HTTPS 图片任务、授权下载和空闲卸载，修复重复启停与显存池预算问题。
+
+最终 PostgreSQL 59 项通过/5 项 Windows 跳过，SQLite 58 项通过/6 项跳过，前端传输 3 项通过，类型/生产构建、Python 分发包及部署配置检查通过。Windows 原生和 Compose 验收 CI 已提供但未触发；生产 Docker/域名/NAT、Windows 实机和此前暂跳过的浏览器视觉仍需外部验收。当前状态与命令以 [后续核验](completion-v0.4.md)和[验收矩阵](acceptance.md)为准。

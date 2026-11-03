@@ -14,6 +14,14 @@ import time
 import httpx
 
 
+def check_loopback_port(port):
+    with socket.socket() as probe:
+        # A stopped HTTP server can leave TIME_WAIT sockets. Reusing those is
+        # safe; a live listener still prevents this bind (no SO_REUSEPORT).
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        probe.bind(("127.0.0.1", port))
+
+
 class OllamaBackend:
     def __init__(self, config, model, resources):
         self.config, self.model, self.resources = config, model, resources
@@ -57,8 +65,7 @@ class OllamaBackend:
             if self.cancelled.is_set():
                 raise RuntimeError("Backend was stopped")
             # Never adopt or stop an unrelated local server.
-            with socket.socket() as probe:
-                probe.bind(("127.0.0.1", self.config.ollama_port))
+            check_loopback_port(self.config.ollama_port)
             self.config.ollama_model_root.mkdir(parents=True, exist_ok=True)
             self.logfile = (self.config.work_root / "ollama.log").open("ab")
             env = {
@@ -198,6 +205,7 @@ class OllamaBackend:
             if self.logfile:
                 self.logfile.close()
                 self.logfile = None
+            self.client.close()
 
 
 @dataclass
@@ -388,7 +396,9 @@ class InferenceWorker:
             self.manager.ready(self.service)
             if payload["template"]["worker"].startswith("comfyui:"):
                 return self.service.backend.generate(
-                    payload["input"], payload["limits"]["output_bytes"]
+                    payload["input"],
+                    payload["limits"]["output_bytes"],
+                    payload["limits"]["timeout_seconds"],
                 )
             return self.service.backend.chat(payload["input"]["messages"])
         except Exception as exc:

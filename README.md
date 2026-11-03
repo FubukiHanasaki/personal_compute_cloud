@@ -48,6 +48,7 @@ CI 包含 PostgreSQL、迁移升降级、权限、并发领取、失败注入、
 - [安全边界与故障排查](docs/security.md)
 - [验收证据与尚未完成项](docs/acceptance.md)
 - [V0.4 对照自检与修复记录](docs/self-check-v0.4.md)
+- [V0.4 后续实现与最终核验](docs/completion-v0.4.md)
 - [阶段实施记录](docs/implementation.md) · [需求基线 V0.4](docs/spec-v0.4.md)
 - [依赖版本、许可与升级策略](docs/dependencies.md)
 

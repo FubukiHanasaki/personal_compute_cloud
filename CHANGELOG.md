@@ -2,6 +2,16 @@
 
 作者：Fubuki。
 
+## 未发布 · 后续实现补齐 · 2026-11-03
+
+新增 Windows AppContainer/Job Object 受控 Worker、独立 Python 运行时校验、写入前 SID ACL 与停止后 profile 清理；实际计算探测成功后才报告能力。提供 Windows 原生安全测试和 CI，当前 Ubuntu 未运行这些用例。
+
+新增可校验、可搬移的 PostgreSQL/工件快照及新目标单事务恢复，Compose 包装脚本使用流式归档；真实清空恢复、登录与授权下载演练通过。实际 Caddy 验证 TLS、出站 Agent、Server 重启持久性通过。新增完整 Compose 部署/恢复 CI，尚未触发。
+
+ComfyUI/SD1.5 真实 GPU、普通用户 HTTPS API、512×512 图片任务与 SHA256 下载核验通过，空闲卸载后显存恢复基线。增加 Torch 显存池预算与独立可写目录，关闭自定义/API 节点及 DynamicVRAM，限制等待时间；修复 TIME_WAIT 误判和 HTTP 连接释放。
+
+最终 PostgreSQL 59 项通过/5 项 Windows 跳过，SQLite 58 项通过/6 项跳过，前端 3 项通过，生产构建与 Python 包检查通过。Windows 实机、生产 Docker/公网域名/NAT 及此前暂跳过的 Portal 视觉验收仍未完成；保持开发版。详见 [补齐与核验记录](docs/completion-v0.4.md)。
+
 ## 未发布 · V0.4 自检修复 · 2026-11-03
 
 修复图片历史独立筛选/分页、管理资源选择器截断、中文 SSE 意外断流与错误恢复、旧用户迟到查询、旧成功提示残留，以及窄屏节点布局和弹窗焦点处理。模型与模板接口补齐授权后的分页；测试/CI 临时目录统一放入 tmp。

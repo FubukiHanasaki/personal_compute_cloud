@@ -30,7 +30,7 @@ notepad agent.toml
 
 脚本将凭证所在 tmp 目录 ACL 收紧到当前账号。可用任务计划程序以“当前用户登录时”运行上述命令，取消“使用最高权限运行”，设置失败重试。当前版本提供清晰的安装和前台运行流程；尚未提供原生 Windows Service 包装器，不宣称其已验收。
 
-Windows 已增加 AppContainer + Job Object 执行层，供受控统计和显式合成测试 Worker 使用。实际安装/隔离验收仍须在 Windows 执行，Ubuntu 上的结构与协议测试不能代替该证据。准备独立的官方 embeddable Python 运行时：
+Windows 已增加 AppContainer + Job Object 执行层，供受控统计和显式合成测试 Worker 使用，要求 64 位 Agent 与运行时；其他架构仅保留可探测的接入能力，不冒险执行。实际安装/隔离验收仍须在 Windows 执行，Ubuntu 上的结构与协议测试不能代替该证据。准备独立的官方 embeddable Python 运行时：
 
 ```powershell
 powershell -File deploy\prepare-windows-worker.ps1
@@ -56,7 +56,7 @@ Agent 被强制终止时，Job 的 kill-on-close 会停止 Worker，OS profile/�
 # Author: Fubuki
 version = 1
 server = "https://compute.example.com"
-# 私有 CA 可显式指定 ca_file；默认使用系统信任，绝不关闭证书校验。
+# 私有 CA 可显式指定 ca_file；默认使用标准 CA 信任库，绝不关闭证书校验。
 # ca_file = "tmp/private-root-ca.pem"
 name = "my-node"
 credential_file = "tmp/agent-credential.json"

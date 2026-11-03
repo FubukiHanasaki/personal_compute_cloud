@@ -7,14 +7,13 @@ import os
 from pathlib import Path
 import re
 import shutil
-import socket
 import subprocess
 import time
 import tempfile
 import uuid
 import httpx
 from .platform import managed_isolation_available
-from .services import OllamaBackend
+from .services import OllamaBackend, check_loopback_port
 
 ALLOWED_NODES = {
     "CheckpointLoaderSimple",
@@ -104,9 +103,10 @@ class ComfyUIBackend(OllamaBackend):
         with self.lock:
             if self.cancelled.is_set():
                 raise RuntimeError("Backend was stopped")
-            with socket.socket() as probe:
-                probe.bind(("127.0.0.1", self.config.comfyui_port))
+            check_loopback_port(self.config.comfyui_port)
             self.logfile = (self.config.work_root / "comfyui.log").open("ab")
+            for name in ("user", "input"):
+                (Path(self.staging.name) / name).mkdir()
             env = {
                 "PATH": "/usr/bin:/bin",
                 "HOME": str(self.config.work_root),
@@ -119,6 +119,8 @@ class ComfyUIBackend(OllamaBackend):
                 "CUDA_VISIBLE_DEVICES": self.config.comfyui_gpu_device,
                 "HIP_VISIBLE_DEVICES": "",
                 "PYTHONDONTWRITEBYTECODE": "1",
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
             }
             command = [
                 shutil.which("systemd-run"),
@@ -134,6 +136,10 @@ class ComfyUIBackend(OllamaBackend):
                 "-p",
                 "TasksMax=256",
                 str(executable),
+                "-I",
+                "-B",
+                str(Path(__file__).with_name("managed_exec.py")),
+                str(self.resources["vram_mb"]),
                 str(script),
                 "--listen",
                 "127.0.0.1",
@@ -141,10 +147,18 @@ class ComfyUIBackend(OllamaBackend):
                 str(self.config.comfyui_port),
                 "--disable-auto-launch",
                 "--disable-all-custom-nodes",
+                "--disable-api-nodes",
+                "--disable-metadata",
+                # Custom DynamicVRAM allocators bypass Torch's memory fraction.
+                "--disable-dynamic-vram",
                 "--output-directory",
                 str(Path(self.staging.name) / "output"),
                 "--temp-directory",
                 str(Path(self.staging.name) / "temp"),
+                "--user-directory",
+                str(Path(self.staging.name) / "user"),
+                "--input-directory",
+                str(Path(self.staging.name) / "input"),
             ]
             if not self.config.comfyui_gpu_device:
                 command.append("--cpu")
@@ -179,7 +193,8 @@ class ComfyUIBackend(OllamaBackend):
             self.stop()
             raise RuntimeError("ComfyUI exceeded its approved VRAM reservation")
 
-    def generate(self, data, max_bytes):
+    def generate(self, data, max_bytes, timeout_seconds=300):
+        until = time.monotonic() + max(1, timeout_seconds)
         graph = approved_workflow(self.config, self.model, data)
         response = self.client.post(
             "/prompt", json={"prompt": graph, "client_id": uuid.uuid4().hex}
@@ -189,6 +204,8 @@ class ComfyUIBackend(OllamaBackend):
         if not re.fullmatch(r"[a-zA-Z0-9-]{1,64}", prompt_id):
             raise RuntimeError("Invalid ComfyUI prompt identity")
         while not self.cancelled.is_set():
+            if time.monotonic() >= until:
+                raise RuntimeError("Image generation timed out")
             response = self.client.get("/history/" + prompt_id)
             response.raise_for_status()
             history = response.json().get(prompt_id)

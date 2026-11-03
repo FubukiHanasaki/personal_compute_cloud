@@ -6,6 +6,33 @@ from pcc_agent.config import AgentConfig, ComfyWorkflow
 from pcc_agent.comfyui import ComfyUIBackend, approved_workflow
 
 
+def test_torch_allocator_budget_refuses_fallback_and_reserves_context_memory(
+    monkeypatch,
+):
+    import sys
+    from types import SimpleNamespace
+    from pcc_agent.managed_exec import gpu_budget
+
+    calls = []
+    cuda = SimpleNamespace(
+        is_available=lambda: True,
+        device_count=lambda: 1,
+        get_device_properties=lambda _: SimpleNamespace(total_memory=4096 * 2**20),
+        set_per_process_memory_fraction=lambda fraction, device: calls.append(
+            (fraction, device)
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=cuda))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "test-device")
+    gpu_budget(2048)
+    assert calls == [((2048 - 256) / 4096, 0)]
+    with pytest.raises(RuntimeError):
+        gpu_budget(8192)
+    cuda.is_available = lambda: False
+    with pytest.raises(RuntimeError, match="CUDA"):
+        gpu_budget(2048)
+
+
 def config(tmp_path):
     workflow = tmp_path / "approved.json"
     workflow.write_text(
@@ -108,6 +135,33 @@ def test_image_adapter_uses_native_queue_and_bounded_png_download(tmp_path):
         assert paths == ["/prompt", "/history/job-123", "/view", "/system_stats"]
         with pytest.raises(RuntimeError, match="limit"):
             backend.generate({"prompt": "a sunset", "size": "256x256"}, 8)
+    finally:
+        backend.stop()
+        backend.client.close()
+
+
+def test_image_history_wait_is_bounded_even_without_agent_guard(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    import pcc_agent.comfyui as module
+
+    cfg = config(tmp_path)
+    ticks = iter([0, 2])
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    backend = ComfyUIBackend(
+        cfg, "local-image", {"cpu": 1, "memory_mb": 512, "vram_mb": 1024}
+    )
+    backend.client.close()
+    backend.client = httpx.Client(
+        base_url="http://127.0.0.1:8189",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"prompt_id": "waiting"})
+        ),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="timed out"):
+            backend.generate(
+                {"prompt": "test", "size": "256x256"}, 1024, timeout_seconds=1
+            )
     finally:
         backend.stop()
         backend.client.close()

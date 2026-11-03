@@ -1,0 +1,55 @@
+{
+  "author": "Fubuki",
+  "date": "2026-11-03",
+  "timezone": "Asia/Shanghai",
+  "environment": "Ubuntu 26.04.1 LTS, Python 3.13.16",
+  "backend": {
+    "comfyui": "0.43.0",
+    "commit": "ab08f7b2caa6d4007ecde3762116c6193613f43b",
+    "torch": "2.11.0+cu128",
+    "custom_nodes": false,
+    "partner_api_nodes": false,
+    "dynamic_vram": false,
+    "torch_allocator_budget": true
+  },
+  "checkpoint": {
+    "file": "v1-5-pruned-emaonly.safetensors",
+    "bytes": 4265146304,
+    "sha256": "6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+    "source": "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5"
+  },
+  "resource_budget": {
+    "cpu": 4,
+    "memory_mb": 8192,
+    "vram_mb": 5632,
+    "cuda_context_headroom_mb": 256
+  },
+  "direct_lifecycle": {
+    "author": "Fubuki",
+    "model": "sd15-validation",
+    "synthetic": false,
+    "size": "256x256",
+    "png_bytes": 112867,
+    "png_sha256": "f171066c6d7c728083b6b851b827ae415979561fb0e40f67e3f39c521363b29e",
+    "torch_vram_bytes": 2206203904,
+    "idle_unloaded_and_process_stopped": true
+  },
+  "https_job": {
+    "author": "Fubuki",
+    "synthetic": false,
+    "protocol": "HTTPS with verified private test CA",
+    "scoped_user_key": true,
+    "real_outbound_agent": true,
+    "model": "SD1.5",
+    "steps": 20,
+    "size": "512x512",
+    "job_completed": true,
+    "authorized_download_sha256_verified": true,
+    "png_bytes": 482655,
+    "png_sha256": "62a46b75a727e4865c2cb80e5602997596b35cd6b6df5c51152be4a41cd5e74e",
+    "idle_unloaded_and_process_stopped": true
+  },
+  "gpu_memory_after_stop_mb": 13,
+  "production_acme_or_nat_test": false,
+  "portal_browser_test": false
+}

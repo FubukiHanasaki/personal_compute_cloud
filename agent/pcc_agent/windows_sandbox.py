@@ -161,6 +161,8 @@ def runtime_root(config):
 def api():
     if os.name != "nt":
         raise RuntimeError("Windows sandbox is available only on Windows")
+    if C.sizeof(HANDLE) != 8:
+        raise RuntimeError("Windows workers require a 64-bit Agent and runtime")
     kernel = C.WinDLL("kernel32", use_last_error=True)
     userenv = C.WinDLL("userenv", use_last_error=True)
     advapi = C.WinDLL("advapi32", use_last_error=True)

@@ -177,3 +177,27 @@ def test_failed_stop_retains_backend_and_quarantines_resources(tmp_path):
     assert active.state == "error" and active.backend is backend
     with pytest.raises(RuntimeError, match="confirmation"):
         manager.acquire("unsafe")
+
+
+def test_loopback_probe_reuses_time_wait_but_refuses_a_live_server():
+    import socket
+    from pcc_agent.services import check_loopback_port
+
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    listener.listen()
+    try:
+        import pytest
+
+        with pytest.raises(OSError):
+            check_loopback_port(port)
+        with socket.create_connection(("127.0.0.1", port)) as client:
+            connection, _ = listener.accept()
+            connection.shutdown(socket.SHUT_RDWR)
+            connection.close()
+            assert client.recv(1) == b""
+    finally:
+        listener.close()
+    check_loopback_port(port)
