@@ -547,8 +547,11 @@ class WindowsWorker:
         with self.lock:
             if self.job:
                 checked(self.kernel.TerminateJobObject(self.job, 1))
-            if self.handle and self.poll() is None:
-                # Also covers failure before assignment, while still suspended.
+                # CreateProcess atomically attaches the worker to this Job.
+                # Termination is asynchronous: don't race it with a redundant
+                # TerminateProcess (which can return ERROR_ACCESS_DENIED).
+            elif self.handle and self.poll() is None:
+                # Defensive fallback only when no Job owns the process.
                 terminated = self.kernel.TerminateProcess(self.handle, 1)
                 if not terminated and self.poll() is None:
                     checked(terminated)

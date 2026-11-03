@@ -62,7 +62,7 @@ jobs:
         run: |
           ./deploy/prepare-windows-worker.ps1
           $env:PCC_WINDOWS_RUNTIME = (Resolve-Path tmp/windows-worker-runtime).Path
-          uv run --extra test pytest tests/test_windows_contract.py tests/test_windows_native.py tests/test_managed_process.py tests/test_windows_model_review.py tests/test_windows_startup_review.py tests/test_windows_models_native.py -q
+          uv run --extra test pytest tests/test_windows_contract.py tests/test_windows_native.py tests/test_managed_process.py tests/test_windows_model_review.py tests/test_windows_startup_review.py tests/test_windows_models_native.py -q -W error::pytest.PytestUnhandledThreadExceptionWarning -W error::pytest.PytestUnraisableExceptionWarning
         env:
           UV_PROJECT_ENVIRONMENT: tmp/venv
           UV_CACHE_DIR: tmp/uv-cache

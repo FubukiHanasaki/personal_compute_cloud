@@ -2,6 +2,12 @@
 
 作者：FubukiHanasaki。
 
+## 未发布 · Windows 超时停止竞态 · 2026-11-03
+
+修复 Worker 已经通过 Job 请求终止后，再次调用 TerminateProcess 导致 WinError 5 的竞态；保留进程退出和 Job 活动进程归零的停止确认。Windows CI 将后台线程和不可报告异常警告视为失败，避免测试通过计数掩盖停止线程异常。
+
+Ubuntu 定向检查 66 项通过、13 项 Windows 用例跳过；新增 4 项回归覆盖退出延迟、无 Job 分支、终止错误和停止未确认。目标 Windows 需再次严格复测，继续保持计算禁用。详见 [启动与清理复查](docs/windows-startup-review.md)。
+
 ## 未发布 · Windows 启动问题复查 · 2026-11-03
 
 补齐 Worker 私有配置目录环境；运行时 ACL 区分目录和文件，先保留当前账号访问并执行安装后检查；限制授权/回收为私有 AppContainer SID，保留探测与执行的原生退出码。原生 Job 清理测试改用具体进程句柄与退出握手，避免只用 PID 存在判断泄漏。

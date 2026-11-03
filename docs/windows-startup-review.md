@@ -4,7 +4,17 @@
 
 本次依据反馈截图核对当前仓库；未访问产生截图的 Windows 主机，也未取得该机尚未提交的本地修改。以下修复已在 Ubuntu 完成定向模拟与静态检查，不能视为 Windows 原生验收通过。Ubuntu Server 的依赖安装可以继续。
 
-## 四项问题的结论
+## 后续 Windows 复测与超时停止修复
+
+用户提供的目标机记录显示：更新至 `fd50210`，在新路径安装运行时后，普通执行、AppContainer 计算、账号权限跨清理保留、私有文件与回环隔离、模型 Job 句柄停止确认已跑通；此前 `0xC0000022` 未再复现。首轮为 30 passed / 2 skipped（真实模型未配置），但伴有后台 Timer 线程异常，不能作为干净验收结果。启用线程异常即失败后，资源限制定向复测为 1 failed / 2 passed / 3 deselected；失败定位到超时停止中的 `TerminateProcess`，WinError 5。以上是用户提供的复测记录，本环境未直接读取目标机 XML。
+
+代码确认存在重复终止的竞态：Worker 在 `CreateProcessW` 时已原子归入 Job，`stop()` 调用 `TerminateJobObject` 后又在退出尚未完全结束时调用 `TerminateProcess`。删除 Job 路径的第二次终止；仅在没有 Job 的防御分支保留直接终止。仍等待具体进程退出，并查询 Job 的活动进程数归零；不捕获后忽略 WinError 5，也不把终止请求成功视为退出已确认。[Microsoft 文档](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess)说明终止为异步操作，且再次终止已退出进程可能返回拒绝访问。
+
+新增 4 项回归检查：Job 退出延迟与重复停止、不带 Job 的防御分支、真实终止错误继续抛出、进程退出后 Job 仍活动时拒绝确认并保留句柄。Windows CI 将 `PytestUnhandledThreadExceptionWarning` 和 `PytestUnraisableExceptionWarning` 视为失败。
+
+本次 Ubuntu 定向复查 **66 passed / 13 skipped**，上述两类警告已设为错误；无后台线程/不可报告异常警告，仍有既有 Starlette/httpx 弃用提示。结果位于 Git 忽略的 `tmp/windows-timeout-review/contracts.xml`。Windows 超时、输出和内存原生用例仍需拉取修复后以同等严格警告设置重跑；当前继续保持 maintenance / enable_compute=false，未满足注册、运行或自启动的验收条件。
+
+## 首次四项问题复查（历史结论）
 
 | 反馈                              | 仓库核对与处理                                                                                                                                                                                                                  | 尚需确认                                                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
