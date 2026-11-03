@@ -46,4 +46,6 @@ def create_app(settings=None):
     from .jobs import router as jobs_router
     app.include_router(templates_router)
     app.include_router(jobs_router)
+    from .auth import router as auth_router
+    app.include_router(auth_router)
     return app

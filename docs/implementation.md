@@ -35,3 +35,7 @@ P1 验证：3 项测试通过（含 P0）；SQLite 迁移至 0002 通过。Windo
 Linux 实际使用 bubblewrap 的网络/PID/挂载命名空间、只读运行时、独立临时目录、CPU affinity、地址空间/CPU 时间/文件大小限制。没有支持的隔离能力即不提供该 Worker。Windows 此时可监控接入，不宣称与 Linux 等价的计算隔离。
 
 9 项测试通过，包括真实隔离子进程完成“提交→领取→统计→工件上传→授权下载”、并发领取、过期租约、停止确认后重试和旧结果拒绝。实际 GPU、Docker HTTPS 和 Windows 仍未验收。架构保持模块化单体，无额外队列服务。生产前仍需 P3–P6。
+
+## P3 结果
+
+新增 0004 迁移、scrypt 密码、HttpOnly/SameSite 会话、CSRF、持久登录限流、密钥作用域/期限/吊销、Owner 用户授权界面所需 API、节点 Admin 资源授权及审计查询。管理权限由后端验证；普通用户只能访问自己的任务/工件。13 项测试通过，新增用户隔离、越权、Private 本地优先、Admin 授权、CSRF 和登录失败审计；SQLite 全量迁移及 Alembic 差异检查通过。实际生产 TLS 和 Windows/GPU 仍待外部环境验收。

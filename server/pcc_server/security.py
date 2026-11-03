@@ -5,7 +5,7 @@ import time
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from .db import get_db
-from .models import APIKey, AuditEvent, Node, NodeCredential, User
+from .models import APIKey, AuditEvent, Node, NodeCredential, User, WebSession
 
 SCOPES = {"jobs:read", "jobs:write", "models:read", "nodes:read", "admin"}
 
@@ -45,14 +45,29 @@ def bearer(request):
 
 
 def current_user(request: Request, db=Depends(get_db)):
-    raw = bearer(request)
-    key = db.scalar(select(APIKey).where(APIKey.hash == digest(raw, request.app.state.settings)))
-    if not key or key.revoked_at or key.expires_at <= time.time():
-        raise HTTPException(401, "凭证无效或已过期")
-    user = db.get(User, key.user_id)
+    settings = request.app.state.settings
+    if request.headers.get("authorization"):
+        key = db.scalar(select(APIKey).where(APIKey.hash == digest(bearer(request), settings)))
+        if not key or key.revoked_at or key.expires_at <= time.time():
+            raise HTTPException(401, "凭证无效或已过期")
+        user = db.get(User, key.user_id)
+        request.state.scopes = key.scopes
+    else:
+        raw = request.cookies.get("pcc_session", "")
+        session = db.scalar(select(WebSession).where(WebSession.hash == digest(raw, settings))) if raw else None
+        if not session or session.expires_at <= time.time():
+            raise HTTPException(401, "请登录")
+        user = db.get(User, session.user_id)
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            expected = digest("csrf:"+raw, settings)
+            if not hmac.compare_digest(request.headers.get("x-csrf-token", ""), expected):
+                raise HTTPException(403, "CSRF 校验失败")
+        request.state.session_id = session.id
+        request.state.scopes = sorted(SCOPES - {"admin"})
+        if user and user.role in {"owner", "admin"}:
+            request.state.scopes.append("admin")
     if not user or user.status != "active":
         raise HTTPException(401, "账户不可用")
-    request.state.scopes = key.scopes
     return user
 
 

@@ -106,7 +106,7 @@ class Job(Base):
 class JobAttempt(Base):
     __tablename__ = "job_attempts"
     __table_args__ = (
-        UniqueConstraint("node_id", "claim_id"),
+        UniqueConstraint("node_id", "claim_id", name="uq_node_claim"),
         Index("uq_job_live_attempt", "job_id", unique=True,
               postgresql_where=text("status IN ('active', 'reconciling')"),
               sqlite_where=text("status IN ('active', 'reconciling')")),
@@ -146,3 +146,18 @@ class Artifact(Base):
     size: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[float] = mapped_column(Float)
+
+
+class WebSession(Base):
+    __tablename__ = "web_sessions"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[float] = mapped_column(Float)
+
+
+class LoginBucket(Base):
+    __tablename__ = "login_buckets"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    resets_at: Mapped[float] = mapped_column(Float)
