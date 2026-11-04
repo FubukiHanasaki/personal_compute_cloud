@@ -1,6 +1,6 @@
 """Disposable real HTTP UI environment. Author: FubukiHanasaki."""
 
-import base64, json, secrets, time, uuid
+import base64, json, secrets, time, uuid, threading
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1] / "tmp/ui-qa"
@@ -72,6 +72,11 @@ with app.state.sessions() as db:
                     "resources": {"cpu": 2, "memory_mb": 2048, "vram_mb": 0},
                     "max_timeout_seconds": 120,
                     "model": model,
+                    "parameters": {
+                        "vision": True,
+                        "context_length": 8192,
+                        "max_tokens": 2048,
+                    },
                 },
             )
         )
@@ -175,6 +180,27 @@ with app.state.sessions() as db:
         )
     )
     db.commit()
+
+
+# Browser fixtures exercise persistence through real HTTP, without model weights.
+def finish_browser_chat_fixtures():
+    from sqlalchemy import select
+
+    while True:
+        time.sleep(0.5)
+        with app.state.sessions() as db:
+            for job in db.scalars(
+                select(Job).where(Job.task_type == "ai.chat", Job.status == "queued")
+            ):
+                job.status = "completed"
+                job.progress = 1
+                job.result = {
+                    "content": "界面验收回复（合成夹具，非真实模型）：消息已保存。"
+                }
+            db.commit()
+
+
+threading.Thread(target=finish_browser_chat_fixtures, daemon=True).start()
 import uvicorn
 
 with gui_server(root / "agent.toml", 8891) as gui:

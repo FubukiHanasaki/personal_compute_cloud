@@ -199,3 +199,26 @@ class ServiceInstance(Base):
     active_requests: Mapped[int] = mapped_column(Integer, default=0)
     last_active: Mapped[float] = mapped_column(Float, default=time.time)
     error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(120), default="新对话")
+    model: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    updated_at: Mapped[float] = mapped_column(Float, default=time.time)
+
+
+class ChatTurn(Base):
+    __tablename__ = "chat_turns"
+    __table_args__ = (UniqueConstraint("conversation_id", "request_id"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id"), index=True
+    )
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    request_id: Mapped[str] = mapped_column(String(64))
+    content: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)

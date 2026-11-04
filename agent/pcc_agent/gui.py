@@ -47,6 +47,10 @@ def toml_config(values):
     lines = ["# Author: FubukiHanasaki"]
     for key, value in scalar.items():
         lines.append(f"{json.dumps(key)} = {json.dumps(value, ensure_ascii=False)}")
+    if values.get("ninfer_models"):
+        lines.append("\n[ninfer_models]")
+        for name, path in values["ninfer_models"].items():
+            lines.append(f"{json.dumps(name)} = {json.dumps(path)}")
     for name, workflow in values.get("comfyui_workflows", {}).items():
         lines.append(f"\n[comfyui_workflows.{json.dumps(name, ensure_ascii=False)}]")
         for key, value in workflow.items():

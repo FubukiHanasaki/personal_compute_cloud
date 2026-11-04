@@ -103,7 +103,7 @@ def execute(agent, payload):
         guardian.start()
         if time.monotonic() >= min(expires[0] - 1, local_deadline):
             raise RuntimeError("Lease expired before worker startup")
-        if payload["template"]["worker"].startswith(("ollama:", "comfyui:")):
+        if payload["template"]["worker"].startswith(("ollama:", "comfyui:", "ninfer:")):
             from .services import InferenceWorker
 
             worker = InferenceWorker(agent.services, payload)

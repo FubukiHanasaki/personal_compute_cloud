@@ -10,7 +10,6 @@ import {
   api,
   listAll,
   setCsrf,
-  streamChat,
   type User,
   type Job,
   type Model,
@@ -26,9 +25,21 @@ import { TemplateEditor } from "./TemplateEditor";
 import { GrantEditor } from "./GrantEditor";
 import { ThemePicker } from "./ThemePicker";
 import { ArtifactPreview } from "./ArtifactPreview";
+import { Icon } from "./Icons";
+import { Overview } from "./Overview";
+import { ChatWorkspace } from "./ChatWorkspace";
+import { ImageStudio } from "./ImageStudio";
 
 type View =
-  "jobs" | "chat" | "images" | "nodes" | "services" | "access" | "audit";
+  | "overview"
+  | "catalog"
+  | "jobs"
+  | "chat"
+  | "images"
+  | "nodes"
+  | "services"
+  | "access"
+  | "audit";
 const labels: Record<string, string> = {
   queued: "排队中",
   claimed: "已领取",
@@ -54,11 +65,13 @@ const labels: Record<string, string> = {
   maintenance: "维护",
 };
 const titles: Record<View, [string, string]> = {
-  jobs: ["任务工作台", "提交计算，追踪每一次执行。"],
-  chat: ["Chat", "连接你的模型，让计算回到自己手中。"],
-  images: ["图像生成", "异步生成，结果持久保存。"],
+  overview: ["工作空间", ""],
+  catalog: ["模型管理", ""],
+  jobs: ["计算任务", "提交计算，追踪每一次执行。"],
+  chat: ["模型对话", "连接你的模型，让计算回到自己手中。"],
+  images: ["图像创作", "异步生成，结果持久保存。"],
   nodes: ["计算节点", "按能力接入，按本地策略共享。"],
-  services: ["模型服务", "按需启动，空闲释放资源。"],
+  services: ["服务运行", "按需启动，空闲释放资源。"],
   access: ["访问与授权", "凭证、用户和已批准的计算能力。"],
   audit: ["操作审计", "每一次重要变更都有迹可循。"],
 };
@@ -171,7 +184,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>("jobs");
+  const [view, setView] = useState<View>("overview");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -273,24 +286,26 @@ function App() {
           setImageOffset(0);
           setError("");
           setNotice("");
-          setView("jobs");
+          setView("overview");
           setUser(next);
         }}
       />
     );
   const nav: [View, string, string][] = [
-    ["jobs", "任务工作台", "▦"],
-    ["chat", "Chat", "◌"],
-    ["images", "图像生成", "▧"],
+    ["overview", "总览", "home"],
+    ["chat", "模型对话", "chat"],
+    ["images", "图像创作", "image"],
+    ["jobs", "计算任务", "jobs"],
     ...(admin
       ? ([
-          ["nodes", "计算节点", "⬡"],
-          ["services", "模型服务", "◫"],
+          ["nodes", "计算节点", "nodes"],
+          ["catalog", "模型管理", "models"],
+          ["services", "服务运行", "settings"],
         ] as [View, string, string][])
       : []),
-    ["access", "访问与授权", "⚿"],
+    ["access", "访问与授权", "lock"],
     ...(user.role === "owner"
-      ? ([["audit", "操作审计", "≡"]] as [View, string, string][])
+      ? ([["audit", "操作审计", "jobs"]] as [View, string, string][])
       : []),
   ];
   return (
@@ -310,7 +325,7 @@ function App() {
                 setNotice("");
               }}
             >
-              <span>{icon}</span>
+              <Icon name={String(icon)} />
               {label}
               {key === "jobs" && (
                 <small>
@@ -395,6 +410,22 @@ function App() {
               </button>
             </div>
           )}
+          {view === "overview" && (
+            <Overview
+              user={user}
+              jobs={jobs}
+              models={models}
+              nodes={nodes}
+              go={setView}
+            />
+          )}
+          {view === "catalog" && admin && (
+            <TemplateEditor
+              templates={templates}
+              act={act}
+              owner={user.role === "owner"}
+            />
+          )}
           {view === "jobs" && (
             <>
               <div className="metrics">
@@ -425,7 +456,7 @@ function App() {
                       <small>{label}</small>
                       <strong>{value}</strong>
                     </div>
-                    <span>{icon}</span>
+                    <Icon name={String(icon)} />
                   </div>
                 ))}
               </div>
@@ -466,9 +497,9 @@ function App() {
               </section>
             </>
           )}
-          {view === "chat" && <Chat models={models} onRefresh={refresh} />}
+          {view === "chat" && <ChatWorkspace models={models} />}
           {view === "images" && (
-            <Images
+            <ImageStudio
               models={models}
               jobs={imageJobs}
               offset={imageOffset}
@@ -484,6 +515,38 @@ function App() {
           )}
           {view === "nodes" && (
             <>
+              <div className="node-summary">
+                <div>
+                  <span className="eyebrow">COMPUTE NETWORK</span>
+                  <h2>
+                    {nodes.filter((n) => n.status === "online").length}
+                    <small> / {nodes.length} 个节点在线</small>
+                  </h2>
+                </div>
+                <div>
+                  <strong>
+                    {nodes.reduce(
+                      (sum, n) => sum + (n.capabilities.allocatable?.cpu || 0),
+                      0,
+                    )}{" "}
+                    核
+                  </strong>
+                  <span>总分配 CPU</span>
+                </div>
+                <div>
+                  <strong>
+                    {(
+                      nodes.reduce(
+                        (sum, n) =>
+                          sum + (n.capabilities.allocatable?.memory_mb || 0),
+                        0,
+                      ) / 1024
+                    ).toFixed(1)}{" "}
+                    GB
+                  </strong>
+                  <span>总分配内存</span>
+                </div>
+              </div>
               <Enrollment act={act} />
               <section className="panel">
                 <div className="panel-heading">
@@ -999,224 +1062,6 @@ function JobDetails({
     </div>
   );
 }
-function Chat({
-  models,
-  onRefresh,
-}: {
-  models: Model[];
-  onRefresh: () => Promise<void>;
-}) {
-  const available = models.filter((m) => m.task_type === "ai.chat");
-  const [model, setModel] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>(
-    [],
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  async function send(e: FormEvent) {
-    e.preventDefault();
-    if (!prompt.trim() || busy) return;
-    const input = [...messages, { role: "user", content: prompt }];
-    setMessages([...input, { role: "assistant", content: "" }]);
-    setPrompt("");
-    setBusy(true);
-    setError("");
-    try {
-      await streamChat(model || available[0]?.id, input, (chunk) =>
-        setMessages((previous) =>
-          previous.map((m, i) =>
-            i === previous.length - 1
-              ? { ...m, content: m.content + chunk }
-              : m,
-          ),
-        ),
-      );
-    } catch (e) {
-      setMessages(input.slice(0, -1));
-      setPrompt(prompt);
-      setError(message(e));
-    } finally {
-      setBusy(false);
-      void onRefresh();
-    }
-  }
-  return (
-    <section className="panel chat-panel">
-      <div className="panel-heading">
-        <label className="inline-label">
-          模型
-          <select
-            aria-label="Chat 模型"
-            disabled={busy}
-            value={model || available[0]?.id || ""}
-            onChange={(e) => {
-              setModel(e.target.value);
-              setMessages([]);
-              setError("");
-            }}
-          >
-            <option disabled value="">
-              暂无授权模型
-            </option>
-            {available.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id}
-                {m.synthetic ? " · 协议测试" : ""}
-                {!m.online ? " · 节点离线" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button disabled={busy} onClick={() => setMessages([])}>
-          新对话 +
-        </button>
-      </div>
-      <div className="chat-messages" aria-live="polite">
-        {!messages.length ? (
-          <div className="chat-welcome">
-            <span>◈</span>
-            <h2>从一个问题开始</h2>
-            {!available.length && <p>请管理员先登记模型并接入对应 Worker。</p>}
-          </div>
-        ) : (
-          messages.map((m, i) => (
-            <div key={i} className={"chat-message " + m.role}>
-              <small>{m.role === "user" ? "你" : "PCC"}</small>
-              <p>{m.content || (busy ? "排队 / 推理中…" : "本次未返回内容")}</p>
-            </div>
-          ))
-        )}
-      </div>
-      {error && (
-        <p role="alert" className="notice error-notice">
-          {error}
-        </p>
-      )}
-      <form onSubmit={send} className="chat-input">
-        <textarea
-          aria-label="消息"
-          placeholder="输入消息…"
-          maxLength={16000}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          required
-        />
-        <button className="primary" disabled={busy || !available.length}>
-          {busy ? "等待中…" : "发送 ↑"}
-        </button>
-      </form>
-    </section>
-  );
-}
-function Images({
-  models,
-  jobs,
-  submit,
-  select,
-  offset,
-  setOffset,
-}: {
-  models: Model[];
-  jobs: Job[];
-  submit: (data: unknown) => Promise<void>;
-  select: (id: string) => void;
-  offset: number;
-  setOffset: (offset: number) => void;
-}) {
-  const available = models.filter((m) => m.task_type === "ai.image");
-  const [model, setModel] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [size, setSize] = useState("512x512");
-  const [busy, setBusy] = useState(false);
-  return (
-    <>
-      <section className="panel image-form">
-        <h2>描述你的画面</h2>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            try {
-              await submit({ model: model || available[0]?.id, prompt, size });
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            画面描述
-            <textarea
-              required
-              maxLength={2000}
-              placeholder="光线、构图、色彩，以及你想表达的故事…"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-          </label>
-          <div className="form-row">
-            <label className="grow">
-              模型
-              <select
-                value={model || available[0]?.id || ""}
-                onChange={(e) => setModel(e.target.value)}
-              >
-                <option disabled value="">
-                  暂无授权图像模型
-                </option>
-                {available.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.id}
-                    {m.synthetic ? " · 协议测试" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              尺寸
-              <select value={size} onChange={(e) => setSize(e.target.value)}>
-                <option>256x256</option>
-                <option>512x512</option>
-              </select>
-            </label>
-            <button className="primary" disabled={busy || !available.length}>
-              {busy ? "提交中…" : "生成图像 ↗"}
-            </button>
-          </div>
-        </form>
-        {available.some((m) => m.synthetic) && (
-          <p className="small muted">
-            标注“协议测试”的适配器仅生成合成测试图片。
-          </p>
-        )}
-      </section>
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>生成历史</h2>
-          <span>结果与任务一起持久保存</span>
-        </div>
-        <JobTable jobs={jobs} select={select} />
-        <div className="pagination">
-          <button
-            disabled={!offset}
-            onClick={() => setOffset(Math.max(0, offset - 30))}
-          >
-            上一页
-          </button>
-          <span>
-            {jobs.length ? offset + 1 : 0}–{offset + jobs.length}
-          </span>
-          <button
-            disabled={jobs.length < 30}
-            onClick={() => setOffset(offset + 30)}
-          >
-            下一页
-          </button>
-        </div>
-      </section>
-    </>
-  );
-}
 function Enrollment({
   act,
 }: {
@@ -1301,12 +1146,7 @@ function Access({
       <div className="tabs" role="group" aria-label="访问设置">
         {[
           ["keys", "API 密钥"],
-          ...(user.role === "owner"
-            ? [
-                ["users", "用户授权"],
-                ["catalog", "模型与模板"],
-              ]
-            : []),
+          ...(user.role === "owner" ? [["users", "用户授权"]] : []),
           ["password", "账号安全"],
         ].map(([key, label]) => (
           <button
@@ -1538,9 +1378,6 @@ function Access({
                 />
               )}
             </section>
-          )}
-          {tab === "catalog" && (
-            <TemplateEditor templates={templates} act={act} />
           )}
         </>
       )}

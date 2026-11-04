@@ -1,9 +1,16 @@
 import math
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 from .db import get_db, transaction
-from .models import TaskTemplate, ServiceDefinition
+from .models import TaskTemplate, ServiceDefinition, Job
+from pcc_agent.inference import (
+    parameters,
+    ImageParameters,
+    validate_messages,
+    IMAGE_SIZES,
+    image_bytes,
+)
 from .schemas import Resources, Strict
 from .security import admin, audit, current_user, require_scope
 
@@ -22,6 +29,8 @@ class TemplateCreate(Strict):
     retry_safe: bool = False
     model: str | None = Field(default=None, max_length=100)
     idle_seconds: int = Field(default=300, ge=1, le=86400)
+    parameters: dict = Field(default_factory=dict)
+    image_parameters: ImageParameters = ImageParameters()
 
 
 class TemplateVisibility(Strict):
@@ -74,31 +83,52 @@ def validate_input(template, data):
         ):
             raise HTTPException(422, "仅支持有限数字，绝对值不超过 1e12")
     elif template.kind == "ai.chat":
-        if (
-            set(data) != {"messages"}
-            or not isinstance(data["messages"], list)
-            or not 1 <= len(data["messages"]) <= 64
-        ):
+        if set(data) not in ({"messages"}, {"messages", "parameters"}):
             raise HTTPException(422, "messages 无效")
-        for msg in data["messages"]:
-            if (
-                not isinstance(msg, dict)
-                or set(msg) != {"role", "content"}
-                or not isinstance(msg["role"], str)
-                or msg["role"] not in {"system", "user", "assistant"}
-                or not isinstance(msg["content"], str)
-                or len(msg["content"]) > 16000
-            ):
-                raise HTTPException(422, "不支持的消息格式")
+        try:
+            defaults = getattr(template, "config", {}).get("parameters", {})
+            validate_messages(data.get("messages"), defaults.get("vision", False))
+            if "parameters" in data:
+                overrides = data["parameters"]
+                if not isinstance(overrides, dict) or set(overrides) - {
+                    "temperature",
+                    "top_p",
+                    "top_k",
+                    "max_tokens",
+                    "seed",
+                    "thinking",
+                }:
+                    raise ValueError(
+                        "只能调整采样参数；上下文、KV 和视觉设置由管理员维护"
+                    )
+                adapter = template.worker.split(":")[0]
+                effective = parameters({**defaults, **overrides}, adapter)
+                if effective["max_tokens"] > defaults.get("max_tokens", 2048):
+                    raise ValueError("输出上限超过管理员配置")
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(422, str(exc)) from exc
     elif template.kind == "ai.image":
         if (
-            set(data) != {"prompt", "size"}
+            set(data) - {"prompt", "size", "images"}
+            or not {"prompt", "size"} <= set(data)
             or not isinstance(data["prompt"], str)
             or not 1 <= len(data["prompt"]) <= 2000
             or not isinstance(data["size"], str)
-            or data["size"] not in {"256x256", "512x512"}
+            or data["size"] not in IMAGE_SIZES
         ):
             raise HTTPException(422, "图片参数无效")
+        if getattr(template, "worker", "") == "synthetic.image" and (
+            data["size"] not in {"256x256", "512x512"} or data.get("images")
+        ):
+            raise HTTPException(422, "协议测试图片仅支持 256 / 512 方图，不支持参考图")
+        images = data.get("images", [])
+        if not isinstance(images, list) or len(images) > 4:
+            raise HTTPException(422, "最多 4 张参考图片")
+        try:
+            for image in images:
+                image_bytes(image)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(422, str(exc)) from exc
     else:
         raise HTTPException(422, "未实现的模板类型")
 
@@ -113,13 +143,13 @@ def create_template(body: TemplateCreate, user=Depends(admin), db=Depends(get_db
         raise HTTPException(422, "计算模板必须使用受控 Worker")
     if body.kind != "compute.stats" and not (
         body.worker in {"synthetic.chat", "synthetic.image"}
-        or body.worker.startswith(("ollama:", "comfyui:"))
+        or body.worker.startswith(("ollama:", "comfyui:", "ninfer:"))
     ):
         raise HTTPException(422, "未支持的推理适配器")
     if (
         body.kind == "ai.chat"
         and body.worker != "synthetic.chat"
-        and not body.worker.startswith("ollama:")
+        and not body.worker.startswith(("ollama:", "ninfer:"))
     ):
         raise HTTPException(422, "Chat 后端不匹配")
     if (
@@ -132,12 +162,20 @@ def create_template(body: TemplateCreate, user=Depends(admin), db=Depends(get_db
         )
     if body.kind.startswith("ai.") and not body.model:
         raise HTTPException(422, "AI 模板需要显式模型 ID")
-    if body.worker.startswith(("ollama:", "comfyui:")) and body.worker.split(":", 1)[
-        1
-    ] != str(body.model):
+    if body.worker.startswith(("ollama:", "comfyui:", "ninfer:")) and body.worker.split(
+        ":", 1
+    )[1] != str(body.model):
         raise HTTPException(422, "模型与后端能力必须一致")
     if body.resources.cpu < 1 or body.resources.memory_mb < 128:
         raise HTTPException(422, "资源限制不足")
+    try:
+        inference = (
+            parameters(body.parameters, body.worker.split(":")[0])
+            if body.kind == "ai.chat"
+            else {}
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     with transaction(db):
         if db.get(TaskTemplate, body.id):
             raise HTTPException(409, "模板 ID 已存在")
@@ -150,6 +188,8 @@ def create_template(body: TemplateCreate, user=Depends(admin), db=Depends(get_db
                 "resources": body.resources.model_dump(),
                 "max_timeout_seconds": body.max_timeout_seconds,
                 "model": body.model,
+                "parameters": inference,
+                "image_parameters": body.image_parameters.model_dump(),
             },
             public=body.public,
             retry_safe=body.retry_safe,
@@ -173,6 +213,8 @@ def create_template(body: TemplateCreate, user=Depends(admin), db=Depends(get_db
                         "worker": body.worker,
                         "model": body.model,
                         "resources": body.resources.model_dump(),
+                        "parameters": inference,
+                        "image_parameters": body.image_parameters.model_dump(),
                     },
                     idle_policy={"idle_seconds": body.idle_seconds},
                 )
@@ -193,7 +235,7 @@ def list_templates(
     templates = [
         t
         for t in db.scalars(select(TaskTemplate).order_by(TaskTemplate.id))
-        if accessible(user, t)
+        if accessible(user, t) or user.role in {"owner", "admin"}
     ]
     return {
         "items": [
@@ -202,7 +244,14 @@ def list_templates(
                 "name": t.name,
                 "kind": t.kind,
                 "worker": t.worker,
-                "config": t.config,
+                "config": {
+                    **t.config,
+                    "idle_seconds": (
+                        db.get(ServiceDefinition, t.id).idle_policy["idle_seconds"]
+                        if db.get(ServiceDefinition, t.id)
+                        else 300
+                    ),
+                },
                 "public": t.public,
             }
             for t in templates[offset : offset + limit]
@@ -210,3 +259,63 @@ def list_templates(
         "limit": limit,
         "offset": offset,
     }
+
+
+class ModelUpdate(Strict):
+    name: str = Field(min_length=1, max_length=120)
+    parameters: dict = Field(default_factory=dict)
+    image_parameters: ImageParameters = ImageParameters()
+    resources: Resources
+    max_timeout_seconds: int = Field(ge=1, le=3600)
+    idle_seconds: int = Field(ge=1, le=86400)
+
+
+@router.put("/api/v1/admin/templates/{template_id}")
+def update_template(
+    template_id: str, body: ModelUpdate, user=Depends(admin), db=Depends(get_db)
+):
+    with transaction(db):
+        row = db.scalar(
+            select(TaskTemplate).where(TaskTemplate.id == template_id).with_for_update()
+        )
+        if not row:
+            raise HTTPException(404, "模型不存在")
+        # Serialize submission with edits. Never mutate settings of queued/running work.
+        if db.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(
+                Job.template_id == row.id,
+                Job.status.not_in(["completed", "failed", "cancelled"]),
+            )
+        ):
+            raise HTTPException(409, "模型仍有排队或运行中的任务，请结束后再更新参数")
+        if body.resources.cpu < 1 or body.resources.memory_mb < 128:
+            raise HTTPException(422, "资源限制不足")
+        try:
+            params = (
+                parameters(body.parameters, row.worker.split(":")[0])
+                if row.kind == "ai.chat"
+                else {}
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        row.name = body.name
+        row.config = {
+            **row.config,
+            "resources": body.resources.model_dump(),
+            "max_timeout_seconds": body.max_timeout_seconds,
+            "parameters": params,
+            "image_parameters": body.image_parameters.model_dump(),
+        }
+        definition = db.get(ServiceDefinition, row.id)
+        if definition:
+            definition.allowed_config = {
+                **definition.allowed_config,
+                "resources": body.resources.model_dump(),
+                "parameters": params,
+                "image_parameters": body.image_parameters.model_dump(),
+            }
+            definition.idle_policy = {"idle_seconds": body.idle_seconds}
+        audit(db, user.id, "model.parameters.update", row.id)
+    return {"id": row.id}

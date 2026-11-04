@@ -1,6 +1,7 @@
 // Author: FubukiHanasaki
 import type { CSSProperties } from "react";
 import type { Node } from "./api";
+import { Icon } from "./Icons";
 const clamp = (value: number) =>
   Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
 export function Progress({
@@ -53,44 +54,68 @@ export function Gauge({
 }
 export function NodeResources({ node }: { node: Node }) {
   const c = node.capabilities;
+  const resources = [
+    { key: "cpu", name: "处理器", icon: "cpu", load: c.cpu_load },
+    { key: "memory_mb", name: "内存", icon: "memory", load: c.memory_load },
+    {
+      key: "vram_mb",
+      name: "显存",
+      icon: "gpu",
+      load: c.physical?.vram_mb
+        ? 100 * (1 - (c.available?.vram_mb || 0) / c.physical.vram_mb)
+        : 0,
+    },
+  ];
+  const unit = (key: string, value: number) =>
+    key === "cpu"
+      ? `${value.toLocaleString()} 核`
+      : `${(value / 1024).toFixed(1)} GB`;
   return (
-    <>
-      <div className="gauges">
-        <Gauge label="CPU 使用率" value={c.cpu_load} />
-        <Gauge label="内存使用率" value={c.memory_load} />
-      </div>
-      <div className="resource-bars">
-        {(["cpu", "memory_mb", "vram_mb"] as const).map((key) => {
-          const physical = c.physical?.[key] ?? 0;
-          const allocated = c.allocatable?.[key] ?? 0;
-          const available = c.available?.[key] ?? 0;
-          return (
-            <div key={key}>
-              <div className="resource-row">
-                <span>
-                  {key === "cpu"
-                    ? "CPU"
-                    : key === "memory_mb"
-                      ? "内存"
-                      : "显存"}
-                </span>
-                <strong>
-                  {allocated.toLocaleString()} / {physical.toLocaleString()}{" "}
-                  {key === "cpu" ? "核" : "MB"}
-                </strong>
-              </div>
-              <progress
-                aria-label={`${node.name}的${key === "cpu" ? "CPU" : key === "memory_mb" ? "内存" : "显存"}分配额度`}
-                value={allocated}
-                max={Math.max(physical, allocated, 1)}
-              />
-              <small className="muted">
-                可用 {available.toLocaleString()} {key === "cpu" ? "核" : "MB"}
-              </small>
+    <div className="resource-cards">
+      {resources.map((r) => {
+        const total = c.physical?.[r.key] || 0,
+          allocated = c.allocatable?.[r.key] || 0,
+          available = c.available?.[r.key] || 0;
+        return (
+          <section
+            className={`resource-card ${r.key}`}
+            key={r.key}
+            aria-label={`${node.name}${r.name}资源`}
+          >
+            <div className="resource-card-head">
+              <Icon name={r.icon} />
+              <span>{r.name}</span>
+              <span className="resource-load">
+                {total ? `${Math.round(clamp(r.load))}% 使用` : "未检测到"}
+              </span>
             </div>
-          );
-        })}
-      </div>
-    </>
+            <strong className="resource-capacity">
+              {unit(r.key, allocated)}
+              <small>分配额度</small>
+            </strong>
+            <div className="resource-segments" aria-hidden="true">
+              {Array.from({ length: 16 }, (_, i) => (
+                <i
+                  className={
+                    i < Math.round((clamp(r.load) / 100) * 16) ? "filled" : ""
+                  }
+                  key={i}
+                />
+              ))}
+            </div>
+            <dl>
+              <div>
+                <dt>设备总量</dt>
+                <dd>{unit(r.key, total)}</dd>
+              </div>
+              <div>
+                <dt>设备可用</dt>
+                <dd>{unit(r.key, available)}</dd>
+              </div>
+            </dl>
+          </section>
+        );
+      })}
+    </div>
   );
 }

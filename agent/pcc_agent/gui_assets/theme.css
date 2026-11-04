@@ -1,19 +1,19 @@
 /* Shared palette: change these seven values for both UIs. Author: FubukiHanasaki. */
 :root {
-  --theme-primary: #5aaaff;
-  --theme-surface: #faf5ed;
-  --theme-accent: #ffd36b;
-  --theme-soft: #ffeed6;
-  --theme-warm: #ffa96b;
+  --theme-primary: #8edbc4;
+  --theme-surface: #f3f7f6;
+  --theme-accent: #bdd9f7;
+  --theme-soft: #e4f3ef;
+  --theme-warm: #f0cda4;
   --theme-background: #ffffff;
-  --theme-text: #797979;
+  --theme-text: #687c78;
   --ink: color-mix(in srgb, var(--theme-text), black 65%);
   --muted: color-mix(in srgb, var(--theme-text), black 24%);
   --border: color-mix(in srgb, var(--theme-text) 23%, var(--theme-background));
   --panel: var(--theme-background);
   --primary: var(--theme-primary);
-  --chart: color-mix(in srgb, var(--theme-primary), black 20%);
-  --chart-warm: color-mix(in srgb, var(--theme-warm), black 25%);
+  --chart: color-mix(in srgb, var(--theme-primary), black 35%);
+  --chart-warm: color-mix(in srgb, var(--theme-warm), black 40%);
   --link: color-mix(in srgb, var(--theme-primary), black 53%);
   --danger: color-mix(in srgb, var(--theme-warm), black 65%);
   --teal: var(--link);

@@ -121,6 +121,7 @@ def discover(config, isolation=None, managed=None):
     )
     needs_managed = bool(
         (config.ollama_executable and config.ollama_models)
+        or (config.ninfer_executable and config.ninfer_models)
         or (
             config.comfyui_python and config.comfyui_script and config.comfyui_workflows
         )
@@ -144,6 +145,8 @@ def discover(config, isolation=None, managed=None):
         and managed
     ):
         workers.extend("comfyui:" + name for name in config.comfyui_workflows)
+    if config.ninfer_executable and config.ninfer_models and managed:
+        workers.extend("ninfer:" + name for name in config.ninfer_models)
     return {
         "physical": physical,
         "allocatable": allocatable,

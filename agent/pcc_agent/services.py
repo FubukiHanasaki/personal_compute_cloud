@@ -12,6 +12,7 @@ import time
 import httpx
 from .managed_process import ManagedProcess, environment
 from .errors import WorkerStopUnconfirmed
+from .inference import parameters, ollama_messages, validate_messages
 
 
 def check_loopback_port(port):
@@ -28,6 +29,9 @@ def check_loopback_port(port):
 class OllamaBackend:
     def __init__(self, config, model, resources):
         self.config, self.model, self.resources = config, model, resources
+        self.supports_thinking = True
+        self.parameters = parameters()
+        self.image_parameters = {}
         self.process = None
         self.port = config.ollama_port
         self.cancelled = threading.Event()
@@ -128,6 +132,11 @@ class OllamaBackend:
                 "OLLAMA_NUM_PARALLEL": "1",
                 "OLLAMA_MAX_LOADED_MODELS": "1",
                 "OLLAMA_NO_CLOUD": "1",
+                "OLLAMA_CONTEXT_LENGTH": str(self.parameters["context_length"]),
+                "OLLAMA_KV_CACHE_TYPE": self.parameters["kv_cache_type"],
+                "OLLAMA_FLASH_ATTENTION": "1"
+                if self.parameters["flash_attention"]
+                else "0",
                 "CUDA_VISIBLE_DEVICES": self.config.ollama_gpu_device or "-1",
                 "HIP_VISIBLE_DEVICES": "-1",
                 "ROCR_VISIBLE_DEVICES": "-1",
@@ -153,12 +162,28 @@ class OllamaBackend:
                 time.sleep(0.1)
         else:
             raise RuntimeError("Managed backend health check timed out")
+        metadata = self._json(
+            "POST", "/api/show", timeout=10, json={"model": self.model}
+        )
+        capabilities = metadata.get("capabilities")
+        if isinstance(capabilities, list):
+            self.supports_thinking = "thinking" in capabilities
+            if self.parameters["vision"] and "vision" not in capabilities:
+                raise RuntimeError("Approved model does not support vision")
+            if self.parameters["thinking"] and not self.supports_thinking:
+                raise RuntimeError("Approved model does not support thinking")
         # Explicit load also verifies that the administrator has pre-installed the model.
         self._json(
             "POST",
             "/api/generate",
             timeout=120,
-            json={"model": self.model, "prompt": "", "stream": False, "keep_alive": -1},
+            json={
+                "model": self.model,
+                "prompt": "",
+                "stream": False,
+                "keep_alive": -1,
+                "options": {"num_ctx": self.parameters["context_length"]},
+            },
         )
         self.check_vram()
 
@@ -174,17 +199,31 @@ class OllamaBackend:
             self.stop()
             raise RuntimeError("Managed model exceeded its approved VRAM reservation")
 
-    def chat(self, messages, max_bytes=2**20, timeout_seconds=120):
+    def chat(self, messages, max_bytes=2**20, timeout_seconds=120, overrides=None):
         if self.cancelled.is_set():
             raise RuntimeError("Backend stopped")
+        effective = parameters({**self.parameters, **(overrides or {})})
+        validate_messages(messages, effective["vision"])
+        if effective["thinking"] and not self.supports_thinking:
+            raise RuntimeError("Approved model does not support thinking")
         response = self._json(
             "POST",
             "/api/chat",
-            timeout=min(120, timeout_seconds),
+            timeout=timeout_seconds,
             max_bytes=min(max_bytes * 6 + 65536, 20 * 2**20),
             json={
                 "model": self.model,
-                "messages": messages,
+                "messages": ollama_messages(messages),
+                **({"think": effective["thinking"]} if self.supports_thinking else {}),
+                "options": {
+                    "num_ctx": effective["context_length"],
+                    "num_predict": effective["max_tokens"],
+                    "temperature": effective["temperature"],
+                    "top_p": effective["top_p"],
+                    "top_k": effective["top_k"],
+                    "repeat_penalty": effective["repetition_penalty"],
+                    "seed": effective["seed"],
+                },
                 "stream": False,
                 "keep_alive": -1,
             },
@@ -261,6 +300,19 @@ class ServiceManager:
                     ):
                         self.services[definition].last_active = self.clock()
                     self.services[definition].desired_state = command["desired_state"]
+                    service = self.services[definition]
+                    service.idle_seconds = min(
+                        command["idle_seconds"], self.config.service_idle_seconds
+                    )
+                    if (
+                        service.config != command["config"]
+                        and not service.active_requests
+                        and self._stop(service)
+                    ):
+                        service.config = command["config"]
+                        service.idle_seconds = min(
+                            command["idle_seconds"], self.config.service_idle_seconds
+                        )
 
     def reports(self):
         with self.lock:
@@ -275,7 +327,7 @@ class ServiceManager:
                 for s in self.services.values()
             ]
 
-    def acquire(self, definition_id):
+    def acquire(self, definition_id, approved_config=None):
         with self.lock:
             if self.closed:
                 raise RuntimeError("Service manager was stopped")
@@ -288,12 +340,19 @@ class ServiceManager:
                 raise RuntimeError(
                     "Service is draining, busy or awaiting stop confirmation"
                 )
-            if service.config["worker"].startswith(("ollama:", "comfyui:")):
+            if approved_config and any(
+                service.config.get(key) != approved_config.get(key)
+                for key in ("resources", "parameters", "image_parameters")
+            ):
+                if not self._stop(service):
+                    raise RuntimeError("Previous model settings are still in use")
+                service.config = {**service.config, **approved_config}
+            if service.config["worker"].startswith(("ollama:", "comfyui:", "ninfer:")):
                 requested = service.config["resources"]
                 if self._exceeds_budget(service):
                     raise RuntimeError("Service exceeds local allocatable resources")
             if service.backend is None and service.config["worker"].startswith(
-                ("ollama:", "comfyui:")
+                ("ollama:", "comfyui:", "ninfer:")
             ):
                 # One managed Ollama server owns the configured loopback port/GPU lock.
                 others = [
@@ -310,10 +369,21 @@ class ServiceManager:
                     from .comfyui import ComfyUIBackend
 
                     factory = ComfyUIBackend
+                elif service.config["worker"].startswith("ninfer:"):
+                    from .ninfer import NInferBackend
+
+                    factory = NInferBackend
                 else:
                     factory = self.factory
                 service.backend = factory(
                     self.config, service.config["model"], requested
+                )
+                service.backend.parameters = parameters(
+                    service.config.get("parameters"),
+                    service.config["worker"].split(":")[0],
+                )
+                service.backend.image_parameters = service.config.get(
+                    "image_parameters", {}
                 )
                 service.state = "starting"
             service.active_requests += 1
@@ -321,7 +391,9 @@ class ServiceManager:
             return service
 
     def _exceeds_budget(self, service):
-        return service.config["worker"].startswith(("ollama:", "comfyui:")) and any(
+        return service.config["worker"].startswith(
+            ("ollama:", "comfyui:", "ninfer:")
+        ) and any(
             service.config["resources"][key]
             > min(
                 getattr(self.config, "allocatable_" + key),
@@ -444,7 +516,9 @@ class ServiceManager:
 class InferenceWorker:
     def __init__(self, manager, payload):
         self.manager = manager
-        self.service = manager.acquire(payload["template"]["id"])
+        self.service = manager.acquire(
+            payload["template"]["id"], payload["template"].get("config")
+        )
         self.executor = ThreadPoolExecutor(max_workers=1)
         self.future = self.executor.submit(self._run, payload)
 
@@ -462,6 +536,11 @@ class InferenceWorker:
                 payload["input"]["messages"],
                 payload["limits"]["output_bytes"],
                 payload["limits"]["timeout_seconds"],
+                **(
+                    {"overrides": payload["input"]["parameters"]}
+                    if payload["input"].get("parameters")
+                    else {}
+                ),
             )
         except Exception as exc:
             error = exc

@@ -48,9 +48,9 @@ curl "$PCC_URL/v1/chat/completions" -H "Authorization: Bearer $PCC_API_KEY" \
   -d '{"model":"YOUR_REGISTERED_MODEL","messages":[{"role":"user","content":"解释二分查找"}],"stream":true}'
 ```
 
-支持字段仅 model、messages、stream；messages 支持 system/user/assistant + 字符串 content。不支持 tools、temperature、max_tokens、图像消息等字段，明确返回 422。SSE 事件为 `data: {...}`，以 `[DONE]` 结束；等待阶段仍执行持久化任务。首版完成推理后分块 SSE，不声称原生 token streaming。
+支持 model、messages、stream、parameters；messages 支持 system/user/assistant + 字符串 content，已启用视觉的模型可在 user content 中传 text / image_url 数组，图片仅支持内嵌 PNG/JPEG/WebP data URI。parameters 可传 temperature、top_p、top_k、max_tokens、seed、thinking；不传时使用管理员默认值。max_tokens 不得超过管理员上限，上下文、KV、视觉设置由管理员维护。tools 和顶层 temperature / max_tokens 等未支持字段明确返回 422。SSE 事件为 `data: {...}`，以 `[DONE]` 结束；等待阶段仍执行持久化任务。首版完成推理后分块 SSE，不声称原生 token streaming。
 
-`POST /api/v1/images/generations` 输入 model、prompt、size（256x256 / 512x512），返回异步 Job，按任务 API 查询/下载。可选 comfyui:<model> 连接本地批准的真实图片工作流；synthetic.image 只验证协议。历史 Linux 真实权重验证与当前 Windows 待验收范围见[验收矩阵](acceptance.md)及[模型复查记录](windows-models-review.md)。
+`POST /api/v1/images/generations` 输入 model、prompt、可选 size（256 / 512 / 768 / 1024 方图、1536x1024、1024x1536）及可选 images（最多四个内嵌图片 data URI），size 默认使用管理员配置，返回异步 Job，按任务 API 查询/下载。可选 comfyui:<model> 连接本地批准的真实图片工作流；synthetic.image 只验证协议。历史 Linux 真实权重验证与当前 Windows 待验收范围见[验收矩阵](acceptance.md)及[模型复查记录](windows-models-review.md)。
 
 ## Agent 协议与人工核对
 
@@ -68,3 +68,9 @@ POST /api/v1/admin/jobs/{id}/reconcile
 ```
 
 retry=true 仅允许声明 retry_safe 的模板；操作留审计。取消与节点 Maintenance 为不同概念；节点策略接口停止新任务，`POST /api/v1/nodes/{id}/abort` 请求中止已执行 PCC 任务。完整字段与响应以服务器 `/docs` 和 `/openapi.json` 为准。
+
+## 持久对话与模型维护
+
+`GET/POST /api/v1/conversations` 列出 / 创建当前用户对话；`GET/PATCH/DELETE /api/v1/conversations/{id}` 查询、重命名、删除。`POST /api/v1/conversations/{id}/messages` 接收 content、唯一 request_id、可选 parameters，返回异步 job_id；读取对话可获得每轮状态及持久化回复。同一对话只允许一个活动任务，重试使用同一 request_id。
+
+`PUT /api/v1/admin/templates/{id}` 允许 Owner / 管理员维护 name、parameters、image_parameters、resources、max_timeout_seconds、idle_seconds。模型有未结束任务时返回 409；不允许通过此接口更改 worker、模型身份、执行文件或授权。详见[模型与会话](models-and-conversations.md)。

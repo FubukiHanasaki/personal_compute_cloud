@@ -131,6 +131,9 @@ def create_app(settings=None):
 
     app.include_router(services_router)
     app.include_router(ai_router)
+    from .conversations import router as conversations_router
+
+    app.include_router(conversations_router)
     if (settings.web_root / "assets").is_dir():
         app.mount(
             "/assets",

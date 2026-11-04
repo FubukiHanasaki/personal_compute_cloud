@@ -546,12 +546,15 @@ def test_ollama_lifecycle_uses_controller_and_refuses_unowned_endpoint(
         assert controller.command == [str(executable), "serve"]
         assert controller.env["CUDA_VISIBLE_DEVICES"] == "-1"
         assert controller.env["OLLAMA_VULKAN"] == "0"
-        assert backend.chat([])["result"]["content"] == "mock reply"
+        assert (
+            backend.chat([{"role": "user", "content": "test"}])["result"]["content"]
+            == "mock reply"
+        )
         backend.unload()
         controller.ready = False
         before = len(calls)
         with pytest.raises(RuntimeError, match="not owned"):
-            backend.chat([])
+            backend.chat([{"role": "user", "content": "test"}])
         assert len(calls) == before
     finally:
         backend.stop()

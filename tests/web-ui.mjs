@@ -34,6 +34,7 @@ const server = spawn(
 let browser;
 const errors = [];
 const checks = [];
+const captures = [];
 try {
   for (let i = 0; ; i++) {
     if (server.exitCode !== null)
@@ -63,6 +64,7 @@ try {
       errors.push("HTTP " + r.status() + " " + new URL(r.url()).pathname);
   });
   const capture = async (name) => {
+    captures.push(name);
     await page.screenshot({
       path: root + "/screenshots/" + name + ".png",
       fullPage: true,
@@ -87,9 +89,9 @@ try {
   await page.getByLabel("用户名", { exact: true }).fill(credentials.username);
   await page.getByLabel("密码", { exact: true }).fill(credentials.password);
   await page.getByRole("button", { name: "进入控制台 →" }).click();
-  await page
-    .getByRole("heading", { name: "任务工作台", exact: true })
-    .waitFor();
+  await page.getByRole("heading", { name: "工作空间", exact: true }).waitFor();
+  await capture("desktop-overview");
+  await nav("计算任务");
   await page.getByRole("progressbar").first().waitFor();
   await capture("desktop-jobs");
   checks.push("login + live task API/progress");
@@ -105,20 +107,33 @@ try {
   await capture("desktop-task");
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await nav("计算节点");
-  await page.getByRole("meter").first().waitFor();
+  await page
+    .getByRole("region", { name: "Windows 工作站处理器资源" })
+    .waitFor();
+  assert.equal(await page.locator(".node-card .resource-card").count(), 3);
   await capture("desktop-nodes");
-  checks.push("CPU/memory meters + allocation bars");
-  await nav("访问与授权");
-  await page.getByRole("button", { name: "模型与模板", exact: true }).click();
+  checks.push(
+    "CPU/memory/VRAM cards with physical, allocated and available capacity",
+  );
+  await nav("模型管理");
+  await page.getByRole("button", { name: "登记模型", exact: true }).click();
   await page.getByLabel("模板 ID", { exact: true }).fill("qa-form-chat");
   await page.getByLabel("显示名称", { exact: true }).fill("表单登记模型");
   await page
     .getByLabel("模型 / 本地工作流 ID", { exact: true })
     .fill("qa-form-model");
-  await page.getByRole("button", { name: "登记模板", exact: true }).click();
-  await page.getByRole("status").getByText("模板已登记").waitFor();
+  await page.getByRole("button", { name: "保存模型设置", exact: true }).click();
+  await page.getByRole("status").getByText("模型设置已保存").waitFor();
   await capture("desktop-models");
   checks.push("model registration form persists via API");
+  await page.getByRole("button", { name: "维护参数" }).first().click();
+  await page.getByLabel("上下文长度（Token）", { exact: true }).fill("16384");
+  await page.getByLabel("KV 缓存类型", { exact: true }).selectOption("q8_0");
+  await capture("desktop-model-editor");
+  await page.getByRole("button", { name: "保存模型设置", exact: true }).click();
+  await page.getByRole("status").getByText("模型设置已保存").waitFor();
+  checks.push("administrator updates context/KV defaults through real API");
+  await nav("访问与授权");
   await page.getByRole("button", { name: "用户授权", exact: true }).click();
   await page.getByRole("button", { name: "编辑授权" }).click();
   await page.getByRole("checkbox", { name: /本地对话/ }).check();
@@ -141,12 +156,68 @@ try {
   await page.getByRole("button", { name: "恢复默认" }).click();
   await page.getByText("主题", { exact: true }).click();
   checks.push("seven-color theme preview + reset");
+  await nav("模型对话");
+  await capture("desktop-chat-empty");
+  await page
+    .getByLabel("消息", { exact: true })
+    .dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  assert.equal(await page.locator(".chat-turn").count(), 0);
+  await page.getByLabel("消息", { exact: true }).fill("保存这段对话");
+  await page.getByLabel("消息", { exact: true }).press("Shift+Enter");
+  assert(
+    (await page.getByLabel("消息", { exact: true }).inputValue()).includes(
+      "\n",
+    ),
+  );
+  await page.getByLabel("消息", { exact: true }).press("Enter");
+  await page.getByText(/界面验收回复/).waitFor();
+  assert.equal(await page.locator(".chat-turn").count(), 1);
+  await capture("desktop-chat");
+  await page.reload();
+  await page.getByRole("heading", { name: "工作空间", exact: true }).waitFor();
+  await nav("模型对话");
+  await page.getByText(/界面验收回复/).waitFor();
+  assert.equal(await page.locator(".chat-turn").count(), 1);
+  await page.getByLabel("选择图片或视频", { exact: true }).setInputFiles({
+    name: "reference.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2ioAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await page.locator(".attachment-strip img").waitFor();
+  await page.getByLabel("消息", { exact: true }).fill("看看这张图片");
+  await page.getByLabel("消息", { exact: true }).press("Enter");
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll(".chat-turn").length === 2 &&
+      document.querySelectorAll(".assistant .message-bubble p").length === 2,
+  );
+  checks.push(
+    "Enter sends, Shift+Enter inserts newline, history survives refresh, visual attachment roundtrip",
+  );
   await page.setViewportSize({ width: 390, height: 844 });
+  await capture("mobile-chat");
+  await nav("访问与授权");
   await capture("mobile-grants");
   await nav("计算节点");
   await capture("mobile-nodes");
-  await nav("图像生成");
+  await nav("图像创作");
+  await page.locator(".gallery-image img").waitFor();
   await capture("mobile-images");
+  await nav("模型管理");
+  await capture("mobile-models");
+  await page.getByRole("button", { name: "维护参数" }).first().click();
+  await capture("mobile-model-editor");
+  await page.getByLabel("关闭模型编辑", { exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await nav("图像创作");
+  await page.locator(".gallery-image img").waitFor();
+  await capture("desktop-images");
+  await nav("总览");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await capture("mobile-overview");
   // Agent: isolated local config, no real registration or Agent process.
   const contrast = await page.evaluate(() => {
     const context = document.createElement("canvas").getContext("2d");
@@ -272,13 +343,28 @@ try {
         browser: browser.version(),
         checks,
         errors,
-        screenshots: 12,
+        screenshots: captures.length,
+        screenshot_names: captures,
       },
       null,
       2,
     ),
   );
   console.log(JSON.stringify({ checks, errors }));
+} catch (error) {
+  if (browser) {
+    const failedPage = browser.contexts()[0]?.pages()[0];
+    if (failedPage) {
+      await failedPage.screenshot({
+        path: root + "/screenshots/failed.png",
+        fullPage: true,
+      });
+      console.error(
+        (await failedPage.locator("body").innerText()).slice(-5000),
+      );
+    }
+  }
+  throw error;
 } finally {
   if (browser) await browser.close();
   server.kill("SIGTERM");

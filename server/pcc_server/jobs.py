@@ -22,7 +22,7 @@ from .models import (
     User,
     uid,
 )
-from .schemas import Resources, Strict
+from .schemas import Strict
 from .security import (
     admin,
     audit,
@@ -144,7 +144,11 @@ def submit_job(db, body, user, settings, idem=None):
             if old.request_hash != request_hash:
                 raise HTTPException(409, "幂等键已用于不同请求")
             return old
-    template = db.get(TaskTemplate, body.template_id)
+    template = db.scalar(
+        select(TaskTemplate)
+        .where(TaskTemplate.id == body.template_id)
+        .with_for_update()
+    )
     if (
         not template
         or not accessible(user, template)
@@ -152,7 +156,9 @@ def submit_job(db, body, user, settings, idem=None):
     ):
         raise HTTPException(403, "模板未授权或类型不匹配")
     validate_input(template, body.input)
-    if len(json.dumps(body.input).encode()) > 100000:
+    if len(json.dumps(body.input).encode()) > (
+        12 * 1024 * 1024 if template.kind.startswith("ai.") else 100000
+    ):
         raise HTTPException(413, "任务输入过大")
     if body.timeout_seconds > template.config["max_timeout_seconds"]:
         raise HTTPException(422, "超时超过模板上限")
@@ -295,7 +301,9 @@ def claim_view(job, attempt, template, settings):
         "limits": {
             **job.requirements,
             "timeout_seconds": job.timeout_seconds,
-            "output_bytes": settings.artifact_max_bytes,
+            "output_bytes": min(settings.artifact_max_bytes, 256 * 1024)
+            if job.task_type == "ai.chat"
+            else settings.artifact_max_bytes,
         },
     }
 
@@ -595,12 +603,20 @@ def complete(
 ):
     settings = request.app.state.settings
     completion_hash = fingerprint(body.model_dump(exclude={"lease_token"}))
-    if len(json.dumps(body.result).encode()) > 65536:
+    if len(json.dumps(body.result).encode()) > 2 * 1024 * 1024:
         raise HTTPException(413, "结果元数据过大，请上传工件")
     with transaction(db):
         job, attempt = checked_attempt(
             db, job_id, body, node, settings, allow_expired=True, allow_terminal=True
         )
+        if job.task_type == "ai.chat":
+            content = body.result.get("content")
+            if not isinstance(content, str):
+                raise HTTPException(422, "对话结果需要字符串 content")
+            if len(content.encode("utf-8")) > 256 * 1024:
+                raise HTTPException(413, "对话回复超过 256 KB 上限")
+        if job.task_type != "ai.chat" and len(json.dumps(body.result).encode()) > 65536:
+            raise HTTPException(413, "结果元数据过大，请上传工件")
         if job.status == "completed" and attempt.completion_hash == completion_hash:
             return view(job)
         if (

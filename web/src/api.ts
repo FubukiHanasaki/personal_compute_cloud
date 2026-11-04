@@ -18,7 +18,26 @@ export type Job = {
   requirements: Record<string, number>;
   queue_reason?: string | null;
 };
+export type Parameters = {
+  context_length: number;
+  max_tokens: number;
+  temperature: number;
+  top_p: number;
+  top_k: number;
+  repetition_penalty: number;
+  seed: number;
+  thinking: boolean;
+  kv_cache_type: string;
+  kv_capacity_mb: number;
+  prefix_reuse: boolean;
+  flash_attention: boolean;
+  vision: boolean;
+};
 export type Model = {
+  name: string;
+  template_id: string;
+  parameters: Partial<Parameters>;
+  image_parameters: Record<string, number | string>;
   id: string;
   task_type: string;
   synthetic: boolean;

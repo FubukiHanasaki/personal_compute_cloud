@@ -1,6 +1,6 @@
 # Personal Compute Cloud
 
-将自己的 Windows / Linux 设备接入统一控制面，通过网页和 HTTPS API 使用经批准的计算任务、Ollama 对话模型与 ComfyUI 图片工作流。
+将自己的 Windows / Linux 设备接入统一控制面，通过网页和 HTTPS API 使用经批准的计算任务、Ollama / NInfer 对话模型与 ComfyUI 图片工作流。
 
 作者：**FubukiHanasaki** · 许可证：[MIT](LICENSE) · 当前状态：开发版 · 需求基线：[V0.4](docs/spec-v0.4.md)
 
@@ -17,7 +17,7 @@
 
 ## 界面与本机配置
 
-服务端采用可更换的七色主题、资源仪表和任务进度条；Owner 可用表单登记模型、切换开放范围并勾选用户授权。Agent 本机配置入口为 `pcc-agent gui --config agent.toml`，支持连接、CA、资源与 Ollama/ComfyUI 设置。Windows/Linux/macOS 更新脚本默认只检查 GitHub，显式参数才快进拉取。详见[界面与更新说明](docs/ui-and-updates.md)。
+工作空间重新组织为总览、模型对话、图像创作、计算任务、节点和模型管理。资源使用 CPU / 内存 / 显存卡片展示，保留可更换的七色主题。管理员可维护模型上下文、KV 缓存和默认推理参数，Owner 管理开放范围与用户授权。Agent 本机配置入口为 `pcc-agent gui --config agent.toml`，支持连接、CA、资源与 Ollama / NInfer / ComfyUI 设置。Windows/Linux/macOS 更新脚本默认只检查 GitHub，显式参数才快进拉取。详见[界面与更新说明](docs/ui-and-updates.md)。
 
 ## 架构
 
@@ -144,15 +144,15 @@ curl "$PCC_URL/api/v1/jobs" \
 
 上例要求已批准 ID 为 `stats` 的模板。接口返回异步 Job；没有兼容节点时保持排队。使用返回的 `job_id` 查询 `/api/v1/jobs/{job_id}`，通过工件接口取得受授权的下载地址。
 
-| 接口                              | 行为                                         |
-| --------------------------------- | -------------------------------------------- |
-| `GET /api/v1/models`              | 列出当前用户获准使用的模型                   |
-| `POST /api/v1/jobs`               | 提交批准的异步计算 / AI 任务                 |
-| `GET /api/v1/jobs/{id}`           | 查询状态与结果                               |
-| `POST /v1/chat/completions`       | 支持 `model`、文本 `messages`、`stream`      |
-| `POST /api/v1/images/generations` | 输入 `model`、`prompt`、`size`，返回异步 Job |
+| 接口                              | 行为                                             |
+| --------------------------------- | ------------------------------------------------ |
+| `GET /api/v1/models`              | 列出当前用户获准使用的模型                       |
+| `POST /api/v1/jobs`               | 提交批准的异步计算 / AI 任务                     |
+| `GET /api/v1/jobs/{id}`           | 查询状态与结果                                   |
+| `POST /v1/chat/completions`       | 支持 `model`、`messages`、`stream`、`parameters` |
+| `POST /api/v1/images/generations` | 输入 `model`、`prompt`、`size`，返回异步 Job     |
 
-Chat 的 SSE 在后端完成推理后分块返回；当前不支持 tools、temperature、max_tokens 或多模态消息。图片尺寸限 `256x256` / `512x512`；`synthetic.*` 仅供协议测试。完整权限、字段、取消与恢复说明见 [API 文档](docs/api.md)。
+网页对话按用户保存在服务器，Enter 发送、Shift + Enter 换行。视觉模型支持内嵌图片及视频采样帧；图像工作流支持参考图编辑。API 的 SSE 在后端完成推理后分块返回；采样选项放在 `parameters` 中，上下文和 KV 等由管理员维护；暂不支持 tools。图像最大画幅为 1536×1024 / 1024×1536；`synthetic.*` 仅供协议测试。详见[模型与会话说明](docs/models-and-conversations.md)。完整权限、字段、取消与恢复说明见 [API 文档](docs/api.md)。
 
 ## 安全与运行边界
 
@@ -170,10 +170,11 @@ Chat 的 SSE 在后端完成推理后分块返回；当前不支持 tools、temp
 
 | 范围                             | 状态                                                                                                                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 最新 Windows 模型逻辑 / 安全复查 | Ubuntu 定向模拟与契约检查 **57 项通过、7 项 Windows 用例跳过**；语法、静态检查及 wheel / sdist 校验通过，见[复查记录](docs/windows-models-review.md)                  |
+| 本轮完整重构                     | SQLite 166 通过 / 15 条件跳过，PostgreSQL 168 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与 21 张桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)   |
+| 历史 Windows 模型逻辑 / 安全复查 | Ubuntu 定向模拟与契约检查 **57 项通过、7 项 Windows 用例跳过**；语法、静态检查及 wheel / sdist 校验通过，见[复查记录](docs/windows-models-review.md)                  |
 | 既有 Linux 全链路验证            | 历史提交已完成真实 HTTPS → Server → Agent → 隔离 Worker → 授权工件，以及 PostgreSQL 备份恢复；详见[验收矩阵](docs/acceptance.md)                                      |
 | 既有真实 GPU 验证                | 历史提交已完成 Linux Ollama 与 ComfyUI / SD1.5 加载、推理和空闲卸载；证据见 [Ollama](docs/evidence/gpu-lifecycle.json)、[ComfyUI](docs/evidence/image-lifecycle.json) |
-| 待目标环境验收                   | Windows 原生隔离及 CPU / GPU 模型、驱动与重连；生产 Docker / 公网 TLS / NAT / 卷恢复；Portal 浏览器与移动端视觉检查                                                   |
+| 待目标环境验收                   | Windows 原生隔离及 CPU / GPU 模型、驱动与重连；生产公网 TLS / NAT / 目标卷恢复；新增 Qwen / NInfer 真实权重推理                                                       |
 
 CI 已配置 PostgreSQL、Windows / Linux Agent 和 Compose 演练入口；工作流是否成功以 GitHub Actions 的实际运行结果为准。模拟检查和历史实测不替代最新代码的目标环境验收。
 
@@ -210,6 +211,7 @@ tmp/               本地临时文件与运行数据（Git 忽略）
 - [服务器部署、配置与备份恢复](docs/deployment.md)
 - [Windows / Linux Agent 安装与运行](docs/agent.md)
 - [Windows Ollama / ComfyUI 配置](docs/windows-models.md)
+- [模型、上下文/KV、持久对话与多模态](docs/models-and-conversations.md)
 - [API 使用与兼容范围](docs/api.md)
 - [安全边界与故障排查](docs/security.md)
 - [验收矩阵](docs/acceptance.md) · [Windows 模型逻辑与安全复查](docs/windows-models-review.md)

@@ -205,7 +205,7 @@ def test_backend_response_limits_and_compression_refusal(tmp_path, case):
     try:
         with pytest.raises(RuntimeError, match="limit|Compressed"):
             if case == "text":
-                backend.chat([], max_bytes=10)
+                backend.chat([{"role": "user", "content": "test"}], max_bytes=10)
             else:
                 backend._json("GET", "/api/ps")
         assert case == "text" or stream.closed

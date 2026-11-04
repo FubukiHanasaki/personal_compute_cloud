@@ -15,6 +15,8 @@ const stringFields = [
   "comfyui_python",
   "comfyui_script",
   "comfyui_gpu_device",
+  "ninfer_executable",
+  "ninfer_gpu_device",
 ];
 const numericFields = [
   "allocatable_cpu",
@@ -26,6 +28,8 @@ const numericFields = [
   "ollama_port",
   "ollama_vram_mb",
   "comfyui_port",
+  "ninfer_port",
+  "ninfer_vram_mb",
   "service_idle_seconds",
 ];
 const boolFields = [
@@ -106,7 +110,7 @@ function input(label, value, key, type = "text", min) {
   element.type = type;
   element.value = value;
   element.dataset.key = key;
-  element.required = true;
+  element.required = !["sampler_node", "image_nodes"].includes(key);
   if (min !== undefined) element.min = min;
   wrapper.append(element);
   return wrapper;
@@ -132,6 +136,12 @@ function addWorkflow(name = "", values = {}) {
     input("API 工作流 JSON 文件", values.file || "", "file"),
     input("正向提示词节点", values.prompt_node || "6", "prompt_node"),
     input("图像尺寸节点", values.latent_node || "5", "latent_node"),
+    input("采样节点（可选）", values.sampler_node || "", "sampler_node"),
+    input(
+      "参考图片节点（逗号分隔，可选）",
+      (values.image_nodes || []).join(", "),
+      "image_nodes",
+    ),
     input(
       "最低显存 MB",
       values.min_vram_mb ?? 1024,
@@ -150,6 +160,9 @@ function render() {
   for (const key of boolFields) $(key).checked = config[key];
   $("allowed_users").value = config.allowed_users.join(", ");
   $("ollama_models").value = config.ollama_models.join("\n");
+  $("ninfer_models").value = Object.entries(config.ninfer_models || {})
+    .map(([name, path]) => `${name}=${path}`)
+    .join("\n");
   $("workflows").replaceChildren();
   for (const [name, values] of Object.entries(config.comfyui_workflows))
     addWorkflow(name, values);
@@ -203,6 +216,16 @@ $("config-form").onsubmit = (e) => {
       .value.split(/[,，\n]/)
       .map((v) => v.trim())
       .filter(Boolean);
+    config.ninfer_models = Object.fromEntries(
+      $("ninfer_models")
+        .value.split(/\r?\n/)
+        .filter((line) => line.trim())
+        .map((line) => {
+          const index = line.indexOf("=");
+          if (index < 1) throw new Error("NInfer 映射格式为 模型ID=完整路径");
+          return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+        }),
+    );
     config.comfyui_workflows = {};
     for (const row of $("workflows").children) {
       const value = Object.fromEntries(
@@ -211,6 +234,10 @@ $("config-form").onsubmit = (e) => {
           el.type === "number" ? Number(el.value) : el.value.trim(),
         ]),
       );
+      value.image_nodes = value.image_nodes
+        .split(/[,，]/)
+        .map((v) => v.trim())
+        .filter(Boolean);
       const name = value.id;
       delete value.id;
       if (

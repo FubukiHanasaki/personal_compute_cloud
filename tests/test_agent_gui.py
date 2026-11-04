@@ -44,6 +44,8 @@ def test_toml_serializer_preserves_windows_paths_and_omits_null():
         server="https://example.com",
         name="node",
         comfyui_python=r"C:\PCC\Python\python.exe",
+        ninfer_executable=r"C:\PCC\NInfer\ninfer-serve.exe",
+        ninfer_models={"qwen3.8-27b": r"C:\PCC\Models\qwen.ninfer"},
         comfyui_workflows={
             "a.b": {
                 "file": r"C:\PCC\工作流.json",

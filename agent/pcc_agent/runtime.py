@@ -45,6 +45,7 @@ class Agent:
             and not (self.config.work_root / "active-attempt.json").exists()
             and (
                 (self.config.ollama_executable and self.config.ollama_models)
+                or (self.config.ninfer_executable and self.config.ninfer_models)
                 or (
                     self.config.comfyui_python
                     and self.config.comfyui_script

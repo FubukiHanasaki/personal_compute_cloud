@@ -13,6 +13,7 @@ import httpx
 from .platform import managed_isolation_available
 from .services import OllamaBackend, check_loopback_port
 from .managed_process import environment
+from .inference import IMAGE_SIZES, image_bytes, ImageParameters
 
 ALLOWED_NODES = {
     "CheckpointLoaderSimple",
@@ -21,10 +22,16 @@ ALLOWED_NODES = {
     "KSampler",
     "VAEDecode",
     "SaveImage",
+    "UNETLoader",
+    "CLIPLoader",
+    "VAELoader",
+    "TextEncodeQwenImage21",
+    "QwenImage21Cache",
+    "LoadImage",
 }
 
 
-def approved_workflow(config, model, data):
+def approved_workflow(config, model, data, image_parameters=None):
     approved = config.comfyui_workflows.get(model)
     if not approved or approved.file.stat().st_size > 1024 * 1024:
         raise RuntimeError("Local workflow is not approved")
@@ -39,24 +46,62 @@ def approved_workflow(config, model, data):
         ):
             raise RuntimeError("Workflow contains an unapproved node")
     if (
-        graph.get(approved.prompt_node, {}).get("class_type") != "CLIPTextEncode"
+        graph.get(approved.prompt_node, {}).get("class_type")
+        not in {"CLIPTextEncode", "TextEncodeQwenImage21"}
         or graph.get(approved.latent_node, {}).get("class_type") != "EmptyLatentImage"
     ):
         raise RuntimeError(
             "Prompt/size bindings must target approved text and latent nodes"
         )
     if (
-        set(data) != {"prompt", "size"}
+        set(data) - {"prompt", "size", "images"}
+        or not {"prompt", "size"} <= set(data)
         or not isinstance(data["size"], str)
-        or data["size"] not in {"256x256", "512x512"}
+        or data["size"] not in IMAGE_SIZES
         or not isinstance(data["prompt"], str)
         or not 1 <= len(data["prompt"]) <= 2000
     ):
         raise RuntimeError("Invalid generation parameters")
     graph = copy.deepcopy(graph)
-    graph[approved.prompt_node]["inputs"]["text"] = data["prompt"]
-    size = int(data["size"].split("x")[0])
-    graph[approved.latent_node]["inputs"].update(width=size, height=size, batch_size=1)
+    text_key = (
+        "prompt"
+        if graph[approved.prompt_node]["class_type"] == "TextEncodeQwenImage21"
+        else "text"
+    )
+    graph[approved.prompt_node]["inputs"][text_key] = data["prompt"]
+    width, height = map(int, data["size"].split("x"))
+    graph[approved.latent_node]["inputs"].update(
+        width=width, height=height, batch_size=1
+    )
+    if approved.sampler_node:
+        if graph.get(approved.sampler_node, {}).get("class_type") != "KSampler":
+            raise RuntimeError("Sampler binding must target KSampler")
+        settings = ImageParameters(**(image_parameters or {}))
+        graph[approved.sampler_node]["inputs"].update(
+            steps=settings.steps, cfg=settings.cfg, seed=settings.seed
+        )
+    images = data.get("images", [])
+    if not isinstance(images, list) or len(images) > len(approved.image_nodes):
+        raise RuntimeError("Workflow does not support this many reference images")
+    for node_id, node in list(graph.items()):
+        if node["class_type"] == "LoadImage" and node_id not in approved.image_nodes:
+            raise RuntimeError(
+                "Every LoadImage must be explicitly bound to request data"
+            )
+    for index, node_id in enumerate(approved.image_nodes):
+        if graph.get(node_id, {}).get("class_type") != "LoadImage":
+            raise RuntimeError("Reference image binding must target LoadImage")
+        if index < len(images):
+            image_bytes(images[index])
+            graph[node_id]["inputs"]["image"] = f"reference-{index}.png"
+        else:
+            del graph[node_id]
+            for node in graph.values():
+                node["inputs"] = {
+                    key: value
+                    for key, value in node["inputs"].items()
+                    if not (isinstance(value, list) and value and value[0] == node_id)
+                }
     for node in graph.values():
         if node["class_type"] == "SaveImage":
             node["inputs"]["filename_prefix"] = "pcc-" + uuid.uuid4().hex
@@ -186,7 +231,13 @@ class ComfyUIBackend(OllamaBackend):
     def generate(self, data, max_bytes, timeout_seconds=300):
         self._require_listener(self.config.comfyui_port)
         until = time.monotonic() + max(1, timeout_seconds)
-        graph = approved_workflow(self.config, self.model, data)
+        graph = approved_workflow(self.config, self.model, data, self.image_parameters)
+        input_root = Path(self.staging.name) / "input"
+        for index, url in enumerate(data.get("images", [])):
+            path = input_root / f"reference-{index}.png"
+            if path.is_symlink():
+                raise RuntimeError("Unsafe input staging path")
+            path.write_bytes(image_bytes(url))
         response = self._json(
             "POST",
             "/prompt",
@@ -280,7 +331,7 @@ class ComfyUIBackend(OllamaBackend):
                 deadline=deadline,
             )
             root = Path(self.staging.name).resolve(strict=True)
-            for name in ("output", "temp"):
+            for name in ("output", "temp", "input"):
                 path = root / name
                 if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
                     raise RuntimeError("Unsafe managed staging directory")

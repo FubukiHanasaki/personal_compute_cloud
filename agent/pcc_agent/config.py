@@ -12,6 +12,8 @@ class ComfyWorkflow(BaseModel):
     prompt_node: str
     latent_node: str
     min_vram_mb: int = Field(default=1024, ge=0)
+    sampler_node: str = ""
+    image_nodes: list[str] = Field(default_factory=list, max_length=4)
 
 
 class AgentConfig(BaseModel):
@@ -46,6 +48,11 @@ class AgentConfig(BaseModel):
     comfyui_port: int = Field(default=8189, ge=1024, le=65535)
     comfyui_gpu_device: str = Field(default="", pattern=GPU_DEVICE_PATTERN)
     comfyui_workflows: dict[str, ComfyWorkflow] = Field(default_factory=dict)
+    ninfer_executable: str = ""
+    ninfer_models: dict[str, Path] = Field(default_factory=dict, max_length=32)
+    ninfer_port: int = Field(default=8089, ge=1024, le=65535)
+    ninfer_gpu_device: str = Field(default="", pattern=GPU_DEVICE_PATTERN)
+    ninfer_vram_mb: int = Field(default=0, ge=0)
     service_idle_seconds: int = Field(default=300, ge=1)
 
     @model_validator(mode="after")
@@ -92,6 +99,10 @@ class AgentConfig(BaseModel):
             value = getattr(config, key)
             if value is not None and not value.is_absolute():
                 setattr(config, key, root / value)
+        config.ninfer_models = {
+            key: value if value.is_absolute() else root / value
+            for key, value in config.ninfer_models.items()
+        }
         for workflow in config.comfyui_workflows.values():
             if not workflow.file.is_absolute():
                 workflow.file = root / workflow.file

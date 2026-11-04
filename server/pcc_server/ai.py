@@ -1,7 +1,6 @@
 import asyncio
 import json
 import time
-import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import Field
@@ -11,7 +10,7 @@ from .jobs import Submit, submit_job, view
 from .models import Job, Node, TaskTemplate
 from .schemas import Strict
 from .security import current_user, require_scope
-from .templates import accessible, validate_input
+from .templates import accessible
 
 router = APIRouter()
 
@@ -20,12 +19,14 @@ class ChatRequest(Strict):
     model: str = Field(max_length=100)
     messages: list[dict] = Field(min_length=1, max_length=64)
     stream: bool = False
+    parameters: dict = Field(default_factory=dict)
 
 
 class ImageRequest(Strict):
     model: str = Field(max_length=100)
     prompt: str = Field(min_length=1, max_length=2000)
-    size: str = "256x256"
+    size: str | None = None
+    images: list[str] = Field(default_factory=list, max_length=4)
 
 
 def find_model(db, model, kind, user):
@@ -64,6 +65,10 @@ def models(
                 "object": "model",
                 "owned_by": "PCC",
                 "task_type": t.kind,
+                "name": t.name,
+                "template_id": t.id,
+                "parameters": t.config.get("parameters", {}),
+                "image_parameters": t.config.get("image_parameters", {}),
                 "synthetic": t.worker.startswith("synthetic."),
                 "online": any(
                     not n.disabled
@@ -92,8 +97,15 @@ def generate_image(
             Submit(
                 task_type="ai.image",
                 template_id=template.id,
-                input={"prompt": body.prompt, "size": body.size},
-                timeout_seconds=min(120, template.config["max_timeout_seconds"]),
+                input={
+                    "prompt": body.prompt,
+                    "size": body.size
+                    or template.config.get("image_parameters", {}).get(
+                        "default_size", "512x512"
+                    ),
+                    **({"images": body.images} if body.images else {}),
+                },
+                timeout_seconds=template.config["max_timeout_seconds"],
             ),
             user,
             request.app.state.settings,
@@ -115,8 +127,11 @@ async def chat(
             Submit(
                 task_type="ai.chat",
                 template_id=template.id,
-                input={"messages": body.messages},
-                timeout_seconds=min(120, template.config["max_timeout_seconds"]),
+                input={
+                    "messages": body.messages,
+                    **({"parameters": body.parameters} if body.parameters else {}),
+                },
+                timeout_seconds=template.config["max_timeout_seconds"],
             ),
             user,
             settings,
