@@ -28,6 +28,10 @@ class Send(Strict):
     parameters: dict = Field(default_factory=dict)
 
 
+class Retry(Strict):
+    request_id: str = Field(pattern=r"^[a-zA-Z0-9-]{1,64}$")
+
+
 def owned(db, identity, user, lock=False):
     query = select(Conversation).where(
         Conversation.id == identity, Conversation.owner_id == user.id
@@ -139,9 +143,12 @@ def send(
             )
         )
         if old:
-            if old.content != {"content": body.content, "parameters": body.parameters}:
+            if (
+                old.content["content"] != body.content
+                or old.content.get("parameters", {}) != body.parameters
+            ):
                 raise HTTPException(409, "重试标识已用于其他内容")
-            return {"job_id": old.job_id}
+            return {"job_id": old.content.get("original_job_id", old.job_id)}
         history = turns(db, row)
         if any(job.status not in TERMINAL for _, job in history):
             raise HTTPException(409, "请等待当前回复结束")
@@ -191,6 +198,73 @@ def send(
     return {"job_id": job.id}
 
 
+@router.post("/{identity}/turns/{turn_id}/retry", status_code=202)
+def retry(
+    identity: str,
+    turn_id: str,
+    body: Retry,
+    request: Request,
+    user=Depends(current_user),
+    db=Depends(get_db),
+):
+    require_scope(request, "jobs:write")
+    with transaction(db):
+        row = owned(db, identity, user, lock=True)
+        history = turns(db, row)
+        found = next(((turn, job) for turn, job in history if turn.id == turn_id), None)
+        if not found:
+            raise HTTPException(404, "对话轮次不存在")
+        turn, previous = found
+        retries = turn.content.get("retries", {})
+        if body.request_id in retries:
+            return {"job_id": retries[body.request_id]}
+        if history[-1][0].id != turn_id or previous.status not in (
+            "failed",
+            "cancelled",
+        ):
+            raise HTTPException(409, "只能重试最后一条失败或已取消的回复")
+        if any(job.status not in TERMINAL for _, job in history):
+            raise HTTPException(409, "请等待当前回复结束")
+        if len(retries) >= 20:
+            raise HTTPException(422, "此回复已重试 20 次，请新建对话")
+        template = find_model(db, row.model, "ai.chat", user)
+        messages = []
+        for earlier, job in history[:-1]:
+            if job.status == "completed":
+                messages.extend(
+                    [
+                        {"role": "user", "content": earlier.content["content"]},
+                        {
+                            "role": "assistant",
+                            "content": (job.result or {}).get("content", ""),
+                        },
+                    ]
+                )
+        messages.append({"role": "user", "content": turn.content["content"]})
+        job = submit_job(
+            db,
+            Submit(
+                task_type="ai.chat",
+                template_id=template.id,
+                input={
+                    "messages": messages,
+                    "parameters": turn.content.get("parameters", {}),
+                },
+                timeout_seconds=template.config["max_timeout_seconds"],
+            ),
+            user,
+            request.app.state.settings,
+        )
+        turn.content = {
+            **turn.content,
+            "original_job_id": turn.content.get("original_job_id", previous.id),
+            "retries": {**retries, body.request_id: job.id},
+        }
+        turn.job_id = job.id
+        row.updated_at = time.time()
+    return {"job_id": job.id}
+
+
 @router.patch("/{identity}")
 def rename(
     identity: str,
@@ -203,6 +277,7 @@ def rename(
     with transaction(db):
         row = owned(db, identity, user, lock=True)
         row.title = body.title
+        row.updated_at = time.time()
     return summary(row)
 
 

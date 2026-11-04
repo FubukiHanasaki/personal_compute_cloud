@@ -192,6 +192,13 @@ def finish_browser_chat_fixtures():
             for job in db.scalars(
                 select(Job).where(Job.task_type == "ai.chat", Job.status == "queued")
             ):
+                if job.input["messages"][-1]["content"] == "模拟一次失败（界面验收）" and not any(
+                    earlier.input["messages"] == job.input["messages"]
+                    for earlier in db.scalars(select(Job).where(Job.task_type == "ai.chat", Job.status == "failed"))
+                ):
+                    job.status = "failed"
+                    job.error = "界面验收：模拟临时推理失败"
+                    continue
                 job.status = "completed"
                 job.progress = 1
                 job.result = {

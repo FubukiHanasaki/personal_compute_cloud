@@ -45,6 +45,8 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
   const [model, setModel] = useState(""),
     [prompt, setPrompt] = useState(""),
     [error, setError] = useState(""),
+    [search, setSearch] = useState(""),
+    [copied, setCopied] = useState(""),
     [busy, setBusy] = useState(false),
     [loadingMedia, setLoadingMedia] = useState(false);
   const [attachments, setAttachments] = useState<
@@ -52,6 +54,8 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
     >([]),
     [overrides, setOverrides] = useState<Partial<Parameters>>({});
   const request = useRef<{ id: string; body: string } | null>(null),
+    retryRequest = useRef<{ turn: string; request_id: string } | null>(null),
+    working = useRef(false),
     selected = useRef(id),
     scroll = useRef<HTMLDivElement>(null),
     file = useRef<HTMLInputElement>(null);
@@ -115,6 +119,8 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
       !chosen
     )
       return;
+    if (working.current) return;
+    working.current = true;
     setBusy(true);
     setError("");
     try {
@@ -134,7 +140,7 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
               text:
                 prompt +
                 (attachments.length > 0
-                  ? "\n附件按顺序排列；视频帧的时间信息：" +
+                  ? "\n附件按顺序排列：" +
                     attachments.map((a) => a.name).join("，")
                   : ""),
             },
@@ -163,8 +169,58 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      working.current = false;
       setBusy(false);
     }
+  }
+  async function retry(turn: Turn) {
+    if (working.current || running || !chosen) return;
+    working.current = true;
+    setBusy(true);
+    setError("");
+    const identity = id;
+    if (retryRequest.current?.turn !== turn.id)
+      retryRequest.current = { turn: turn.id, request_id: crypto.randomUUID() };
+    try {
+      await api(
+        `/api/v1/conversations/${identity}/turns/${turn.id}/retry`,
+        "POST",
+        {
+          request_id: retryRequest.current.request_id,
+        },
+      );
+      retryRequest.current = null;
+      const updated = await api<Conversation>(
+        `/api/v1/conversations/${identity}`,
+      );
+      if (selected.current === identity) setConversation(updated);
+      await refreshList();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  }
+  function exportConversation() {
+    if (!conversation) return;
+    const url = URL.createObjectURL(
+      new Blob(
+        [
+          JSON.stringify(
+            { version: 1, exported_at: new Date().toISOString(), conversation },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      ),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `conversation-${conversation.id}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   const choose = (value: string) => {
     setId(value);
@@ -172,6 +228,7 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
     setAttachments([]);
     setOverrides({});
     setError("");
+    setCopied("");
   };
   return (
     <div className="conversation-workspace">
@@ -188,22 +245,41 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
           新建对话
         </button>
         <span className="eyebrow">最近对话</span>
+        <input
+          type="search"
+          aria-label="搜索对话"
+          placeholder="搜索对话"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <div className="conversation-list">
-          {list.map((c) => (
-            <button
-              className={id === c.id ? "selected" : ""}
-              disabled={busy}
-              key={c.id}
-              onClick={() => choose(c.id)}
-            >
-              <Icon name="chat" size={17} />
-              <span>
-                {c.title}
-                <small>{c.model}</small>
-              </span>
-            </button>
-          ))}
+          {list
+            .filter((c) =>
+              `${c.title} ${c.model}`
+                .toLocaleLowerCase()
+                .includes(search.trim().toLocaleLowerCase()),
+            )
+            .map((c) => (
+              <button
+                className={id === c.id ? "selected" : ""}
+                disabled={busy}
+                key={c.id}
+                onClick={() => choose(c.id)}
+              >
+                <Icon name="chat" size={17} />
+                <span>
+                  {c.title}
+                  <small>{c.model}</small>
+                </span>
+              </button>
+            ))}
           {!list.length && <p className="small muted">开始对话后自动保存</p>}
+          {!!list.length &&
+            !list.some((c) =>
+              `${c.title} ${c.model}`
+                .toLocaleLowerCase()
+                .includes(search.trim().toLocaleLowerCase()),
+            ) && <p className="small muted">没有匹配的对话</p>}
         </div>
       </aside>
       <section className="conversation-main">
@@ -241,6 +317,13 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
           <div className="toolbar-spacer" />
           {conversation && (
             <>
+              <button
+                className="icon-button"
+                onClick={exportConversation}
+                disabled={busy}
+              >
+                导出对话
+              </button>
               <button
                 className="icon-button"
                 title="重命名对话"
@@ -322,11 +405,39 @@ export function ChatWorkspace({ models }: { models: Model[] }) {
                   </span>
                   <div className="message-bubble">
                     {turn.answer ? (
-                      <p>{turn.answer}</p>
+                      <>
+                        <p>{turn.answer}</p>
+                        <button
+                          className="text-button message-action"
+                          aria-label="复制回复"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(turn.answer);
+                              setCopied(turn.id);
+                            } catch {
+                              setError("无法访问剪贴板，请手动选择文字复制");
+                            }
+                          }}
+                        >
+                          {copied === turn.id ? "已复制" : "复制"}
+                        </button>
+                      </>
                     ) : terminal.includes(turn.status) ? (
-                      <p className="danger-text">
-                        {turn.error || "此次任务没有返回回复"}
-                      </p>
+                      <>
+                        <p className="danger-text">
+                          {turn.error || "此次任务没有返回回复"}
+                        </p>
+                        {turn.id === conversation.turns.at(-1)?.id &&
+                          ["failed", "cancelled"].includes(turn.status) && (
+                            <button
+                              className="text-button message-action"
+                              disabled={busy || running || !chosen}
+                              onClick={() => void retry(turn)}
+                            >
+                              重试回复
+                            </button>
+                          )}
+                      </>
                     ) : (
                       <div className="inference-pending">
                         <span className="thinking-dots">● ● ●</span>

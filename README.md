@@ -4,7 +4,7 @@
 
 作者：**FubukiHanasaki** · 许可证：[MIT](LICENSE) · 当前状态：开发版 · 需求基线：[V0.4](docs/spec-v0.4.md)
 
-项目已提供控制面、出站 Agent、中文管理台和用户 Portal。Windows 模型支持已完成逻辑、安全及模拟检查；Windows 原生执行、生产 Docker 部署与 Portal 视觉验收仍待完成，具体证据见[当前验证状态](#当前验证状态)。
+项目已提供控制面、出站 Agent、中文管理台和用户 Portal。Windows 模型支持已完成逻辑、安全及模拟检查，Portal 已完成 Ubuntu 浏览器视觉与交互验收；目标 Windows / GPU 和生产部署仍需按环境验收，具体证据见[当前验证状态](#当前验证状态)。
 
 ## 功能
 
@@ -170,7 +170,7 @@ curl "$PCC_URL/api/v1/jobs" \
 
 | 范围                             | 状态                                                                                                                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 本轮完整重构                     | SQLite 166 通过 / 15 条件跳过，PostgreSQL 168 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与 21 张桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)   |
+| 本轮完整重构                     | SQLite 171 通过 / 15 条件跳过，PostgreSQL 173 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
 | 历史 Windows 模型逻辑 / 安全复查 | Ubuntu 定向模拟与契约检查 **57 项通过、7 项 Windows 用例跳过**；语法、静态检查及 wheel / sdist 校验通过，见[复查记录](docs/windows-models-review.md)                  |
 | 既有 Linux 全链路验证            | 历史提交已完成真实 HTTPS → Server → Agent → 隔离 Worker → 授权工件，以及 PostgreSQL 备份恢复；详见[验收矩阵](docs/acceptance.md)                                      |
 | 既有真实 GPU 验证                | 历史提交已完成 Linux Ollama 与 ComfyUI / SD1.5 加载、推理和空闲卸载；证据见 [Ollama](docs/evidence/gpu-lifecycle.json)、[ComfyUI](docs/evidence/image-lifecycle.json) |

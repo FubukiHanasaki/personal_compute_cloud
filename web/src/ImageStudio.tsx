@@ -106,6 +106,23 @@ export function ImageStudio({
     [images, setImages] = useState<{ url: string; name: string }[]>([]);
   const file = useRef<HTMLInputElement>(null);
   const selected = available.find((m) => m.id === model) || available[0];
+  const sizes = [
+    "256x256",
+    "512x512",
+    "768x768",
+    "1024x1024",
+    "1536x1024",
+    "1024x1536",
+  ].filter((s) => !selected?.synthetic || ["256x256", "512x512"].includes(s));
+  const preferredSize = String(
+    size || selected?.image_parameters?.default_size || "",
+  );
+  const effectiveSize =
+    preferredSize && sizes.includes(preferredSize)
+      ? preferredSize
+      : selected?.synthetic
+        ? "512x512"
+        : "1024x1024";
   return (
     <div className="image-studio">
       <section className="image-controls panel">
@@ -124,10 +141,7 @@ export function ImageStudio({
               await submit({
                 model: selected?.id,
                 prompt,
-                size:
-                  size ||
-                  selected?.image_parameters?.default_size ||
-                  "1024x1024",
+                size: effectiveSize,
                 ...(images.length ? { images: images.map((i) => i.url) } : {}),
               });
             } catch (e) {
@@ -140,11 +154,13 @@ export function ImageStudio({
           <label>
             模型
             <select
+              aria-label="图像模型"
               required
               value={selected?.id || ""}
               onChange={(e) => {
                 setModel(e.target.value);
                 setSize("");
+                setImages([]);
               }}
             >
               {!available.length && <option value="">暂无授权图像模型</option>}
@@ -170,32 +186,15 @@ export function ImageStudio({
           <label>
             画幅
             <select
-              value={
-                size ||
-                String(
-                  selected?.image_parameters?.default_size ||
-                    (selected?.synthetic ? "512x512" : "1024x1024"),
-                )
-              }
+              aria-label="画幅"
+              value={effectiveSize}
               onChange={(e) => setSize(e.target.value)}
             >
-              {[
-                "256x256",
-                "512x512",
-                "768x768",
-                "1024x1024",
-                "1536x1024",
-                "1024x1536",
-              ]
-                .filter(
-                  (s) =>
-                    !selected?.synthetic || ["256x256", "512x512"].includes(s),
-                )
-                .map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace("x", " × ")}
-                  </option>
-                ))}
+              {sizes.map((s) => (
+                <option key={s} value={s}>
+                  {s.replace("x", " × ")}
+                </option>
+              ))}
             </select>
           </label>
           <div className="reference-heading">

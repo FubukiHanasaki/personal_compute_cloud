@@ -112,6 +112,18 @@ try {
     exact: true,
   });
   await nodeTile.waitFor();
+  await page.getByLabel("搜索节点", { exact: true }).fill("不存在的节点");
+  await page.getByText("没有匹配的节点", { exact: true }).waitFor();
+  assert.equal(await page.locator(".node-tile").count(), 0);
+  await page.getByLabel("搜索节点", { exact: true }).fill("ollama");
+  await nodeTile.waitFor();
+  await page
+    .getByLabel("节点状态筛选", { exact: true })
+    .selectOption("disabled");
+  assert.equal(await page.locator(".node-tile").count(), 0);
+  await page.getByLabel("节点状态筛选", { exact: true }).selectOption("all");
+  await page.getByLabel("搜索节点", { exact: true }).fill("");
+  checks.push("node search by worker + status filters + empty state");
   assert.equal(await nodeTile.getByRole("meter").count(), 3);
   assert((await nodeTile.boundingBox()).width <= 325);
   assert.equal(await page.getByRole("dialog").count(), 0);
@@ -221,6 +233,34 @@ try {
   await page.getByLabel("消息", { exact: true }).press("Enter");
   await page.getByText(/界面验收回复/).waitFor();
   assert.equal(await page.locator(".chat-turn").count(), 1);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByLabel("复制回复", { exact: true }).click();
+  assert(
+    (await page.evaluate(() => navigator.clipboard.readText())).includes(
+      "界面验收回复",
+    ),
+  );
+  await page.getByLabel("搜索对话", { exact: true }).fill("找不到的对话");
+  await page.getByText("没有匹配的对话", { exact: true }).waitFor();
+  await page.getByLabel("搜索对话", { exact: true }).fill("保存这段");
+  assert.equal(await page.locator(".conversation-list > button").count(), 1);
+  await page.getByLabel("搜索对话", { exact: true }).fill("");
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出对话", exact: true }).click();
+  const download = await downloaded;
+  assert.match(
+    download.suggestedFilename(),
+    /^conversation-[a-zA-Z0-9-]+\.json$/,
+  );
+  await download.saveAs(root + "/conversation-export.json");
+  const exported = JSON.parse(
+    await readFile(root + "/conversation-export.json", "utf8"),
+  );
+  assert.equal(exported.version, 1);
+  assert.equal(exported.conversation.turns.length, 1);
+  assert(exported.conversation.turns[0].answer.includes("界面验收回复"));
+  assert(!JSON.stringify(exported).includes(credentials.password));
+  checks.push("conversation search, clipboard copy and JSON download");
   await capture("desktop-chat");
   await page.reload();
   await page.getByRole("heading", { name: "工作空间", exact: true }).waitFor();
@@ -246,6 +286,31 @@ try {
   checks.push(
     "Enter sends, Shift+Enter inserts newline, history survives refresh, visual attachment roundtrip",
   );
+  await page
+    .getByLabel("消息", { exact: true })
+    .fill("模拟一次失败（界面验收）");
+  await page.getByLabel("消息", { exact: true }).press("Enter");
+  await page.getByText("界面验收：模拟临时推理失败", { exact: true }).waitFor();
+  await capture("desktop-chat-retry");
+  await page.getByRole("button", { name: "重试回复", exact: true }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll(".chat-turn").length === 3 &&
+      document.querySelectorAll(".assistant .message-bubble > p").length ===
+        3 &&
+      !document.querySelector(".assistant .danger-text"),
+  );
+  assert.equal(
+    await page.getByRole("button", { name: "重试回复", exact: true }).count(),
+    0,
+  );
+  await page.reload();
+  await page.getByRole("heading", { name: "工作空间", exact: true }).waitFor();
+  await nav("模型对话");
+  await page.waitForFunction(
+    () => document.querySelectorAll(".chat-turn").length === 3,
+  );
+  checks.push("failed reply retries in place and persists after reload");
   await page.setViewportSize({ width: 390, height: 844 });
   await capture("mobile-chat");
   await nav("访问与授权");
@@ -285,6 +350,45 @@ try {
   await nav("图像创作");
   await page.locator(".gallery-image img").waitFor();
   await capture("desktop-images");
+  // Legacy synthetic metadata omitted the default size. Verify the selected
+  // 512px value is also sent over HTTP, rather than the old 1024px fallback.
+  await page.route("**/api/v1/models?*", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    for (const model of payload.data) {
+      if (model.task_type === "ai.image") {
+        model.synthetic = true;
+        model.image_parameters = {};
+      }
+    }
+    await route.fulfill({ response, json: payload });
+  });
+  await page.getByRole("button", { name: "↻ 刷新", exact: true }).click();
+  await page.waitForFunction(() =>
+    document
+      .querySelector(".image-controls select")
+      .textContent.includes("协议测试"),
+  );
+  assert.equal(
+    await page.getByLabel("画幅", { exact: true }).inputValue(),
+    "512x512",
+  );
+  await page.getByLabel("画面描述", { exact: true }).fill("尺寸回归检查");
+  const imageSent = page.waitForRequest(
+    (r) =>
+      new URL(r.url()).pathname === "/api/v1/images/generations" &&
+      r.method() === "POST",
+  );
+  const imageAccepted = page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === "/api/v1/images/generations" &&
+      r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "生成图像", exact: true }).click();
+  assert.equal((await imageSent).postDataJSON().size, "512x512");
+  assert.equal((await imageAccepted).status(), 202);
+  await page.unroute("**/api/v1/models?*");
+  checks.push("legacy synthetic size matches the submitted image request");
   await nav("总览");
   await page.setViewportSize({ width: 390, height: 844 });
   await capture("mobile-overview");

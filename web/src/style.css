@@ -3244,3 +3244,62 @@ progress::-moz-progress-bar {
 .node-catalog-panel > .node-gallery {
   padding: 0;
 }
+
+/* Workspace utilities. Author: FubukiHanasaki */
+.conversation-sidebar > input[type="search"] {
+  min-width: 0;
+  width: 100%;
+  font-size: 12px;
+}
+.message-action {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.node-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.node-filters input {
+  width: min(100%, 290px);
+}
+.node-filters select {
+  width: auto;
+  min-width: 125px;
+}
+.node-filters > span {
+  margin-left: auto;
+}
+.node-filter-empty {
+  padding: 32px 0;
+  color: var(--muted);
+}
+.conversation-toolbar {
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .conversation-sidebar > input[type="search"] {
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .conversation-toolbar {
+    gap: 6px;
+  }
+  .conversation-toolbar select {
+    max-width: 150px;
+  }
+  .node-filters {
+    gap: 8px;
+  }
+  .node-filters input {
+    flex: 1;
+    min-width: 135px;
+  }
+  .node-filters > span {
+    width: 100%;
+    margin: 0;
+  }
+}

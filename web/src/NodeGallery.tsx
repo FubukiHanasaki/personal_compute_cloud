@@ -354,11 +354,44 @@ export function NodeGallery({
     id: string;
     origin: Origin;
   } | null>(null);
+  const [search, setSearch] = useState(""),
+    [status, setStatus] = useState("all");
+  const visible = nodes.filter(
+    (node) =>
+      (status === "all" || node.status === status) &&
+      `${node.name} ${node.os} ${(node.capabilities.workers || []).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase()),
+  );
   const selected = nodes.find((n) => n.id === selection?.id);
   return (
     <>
+      <div className="node-filters">
+        <input
+          type="search"
+          aria-label="搜索节点"
+          placeholder="搜索节点、系统或模型"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          aria-label="节点状态筛选"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        >
+          <option value="all">全部状态</option>
+          {Object.entries(statuses).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <span className="small muted" role="status">
+          {visible.length} / {nodes.length} 个节点
+        </span>
+      </div>
       <div className="node-gallery">
-        {nodes.map((node) => (
+        {visible.map((node) => (
           <button
             className="node-tile"
             key={node.id}
@@ -397,6 +430,11 @@ export function NodeGallery({
           </button>
         ))}
       </div>
+      {!visible.length && (
+        <p className="node-filter-empty">
+          {nodes.length ? "没有匹配的节点" : "暂无计算节点"}
+        </p>
+      )}
       {selected && selection && (
         <NodeDetail
           node={selected}
