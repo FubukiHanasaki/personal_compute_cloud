@@ -19,8 +19,8 @@ import {
   type Artifact,
 } from "./api";
 import "./style.css";
-import { NodePolicy } from "./NodePolicy";
-import { NodeResources, Progress } from "./Visuals";
+import { NodeGallery } from "./NodeGallery";
+import { Progress } from "./Visuals";
 import { TemplateEditor } from "./TemplateEditor";
 import { GrantEditor } from "./GrantEditor";
 import { ThemePicker } from "./ThemePicker";
@@ -548,7 +548,7 @@ function App() {
                 </div>
               </div>
               <Enrollment act={act} />
-              <section className="panel">
+              <section className="panel node-catalog-panel">
                 <div className="panel-heading">
                   <h2>节点与资源</h2>
                   <span>{nodes.length} 个已授权节点</span>
@@ -558,97 +558,7 @@ function App() {
                     暂无计算节点。签发一次性令牌，在节点上完成注册。
                   </Empty>
                 ) : (
-                  <div className="node-grid">
-                    {nodes.map((n) => (
-                      <article className="node-card" key={n.id}>
-                        <div className="node-top">
-                          <span className="node-icon">⬡</span>
-                          <div>
-                            <h3>{n.name}</h3>
-                            <small>
-                              {n.os} · {n.id.slice(0, 8)}
-                            </small>
-                          </div>
-                          <Badge value={n.status} />
-                        </div>
-                        <NodeResources node={n} />
-                        <p className="small muted">
-                          本地模式：
-                          {labels[String(n.local_policy.mode)] || "未报告"} ·
-                          心跳 {stamp(n.last_seen)}
-                        </p>
-                        <div className="node-actions">
-                          <label>
-                            云端模式
-                            <select
-                              aria-label={`${n.name}共享策略`}
-                              value={String(n.policy.mode)}
-                              disabled={n.disabled}
-                              onChange={(e) =>
-                                void act(() =>
-                                  api(`/api/v1/nodes/${n.id}/policy`, "PUT", {
-                                    ...n.policy,
-                                    mode: e.target.value,
-                                  }),
-                                )
-                              }
-                            >
-                              {[
-                                "shared",
-                                "private",
-                                "reserved",
-                                "maintenance",
-                                "offline",
-                              ].map((v) => (
-                                <option value={v} key={v}>
-                                  {labels[v]}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <button
-                            className="danger"
-                            onClick={() => {
-                              if (confirm("请求中止该节点上的所有 PCC 任务？"))
-                                void act(
-                                  () =>
-                                    api(`/api/v1/nodes/${n.id}/abort`, "POST"),
-                                  "已请求中止受管任务",
-                                );
-                            }}
-                          >
-                            中止受管任务
-                          </button>
-                          <button
-                            className="text-button danger-text"
-                            onClick={() => {
-                              if (confirm("吊销后需重新注册，确认继续？"))
-                                void act(
-                                  () =>
-                                    api(`/api/v1/nodes/${n.id}/revoke`, "POST"),
-                                  "节点凭证已吊销",
-                                );
-                            }}
-                          >
-                            吊销节点
-                          </button>
-                        </div>
-                        <NodePolicy
-                          node={n}
-                          users={policyUsers}
-                          save={(policy) =>
-                            act(() =>
-                              api(
-                                `/api/v1/nodes/${n.id}/policy`,
-                                "PUT",
-                                policy,
-                              ),
-                            )
-                          }
-                        />
-                      </article>
-                    ))}
-                  </div>
+                  <NodeGallery nodes={nodes} users={policyUsers} act={act} />
                 )}
               </section>
             </>

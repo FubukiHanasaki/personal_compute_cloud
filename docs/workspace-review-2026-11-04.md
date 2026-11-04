@@ -39,3 +39,7 @@ Ubuntu 无 Windows 原生 Job / AppContainer 环境，13 项原生测试在本�
 ## 升级
 
 保留 `.env`、`agent.toml`、凭证、模型和现有数据。先备份并停止 PCC，快进更新源码和依赖，构建前端，然后执行 `python3 scripts/dev.py migrate` 升至 0006，再通过原有 PM2 / 服务入口启动。Agent 更新后需重启以启用新增本地适配器配置，已有注册凭证可以继续使用。
+
+## 后续节点卡调整
+
+节点列表改为最大 324 px 的紧凑卡片，不再拉伸铺满容器，圆环展示 CPU / 内存 / 显存；点击后原位放大为渐变详情层，保留全部管理操作及层内成功 / 错误反馈。新增 Ubuntu 浏览器检查覆盖点击、键盘 Enter、Escape、遮罩、焦点恢复、层内策略保存、手机详情以及减少动态效果偏好。截图新增 `desktop-node-detail.png` 与 `mobile-node-detail.png`。本次仅调整前端交互，后端和数据库不变。

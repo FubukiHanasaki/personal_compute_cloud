@@ -107,13 +107,62 @@ try {
   await capture("desktop-task");
   await page.getByRole("button", { name: "关闭", exact: true }).click();
   await nav("计算节点");
-  await page
+  const nodeTile = page.getByRole("button", {
+    name: "查看 Windows 工作站 详情",
+    exact: true,
+  });
+  await nodeTile.waitFor();
+  assert.equal(await nodeTile.getByRole("meter").count(), 3);
+  assert((await nodeTile.boundingBox()).width <= 325);
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  await capture("desktop-nodes");
+  await nodeTile.click();
+  const nodeDialog = page.getByRole("dialog", {
+    name: "Windows 工作站",
+    exact: true,
+  });
+  await nodeDialog.waitFor();
+  await nodeDialog
     .getByRole("region", { name: "Windows 工作站处理器资源" })
     .waitFor();
-  assert.equal(await page.locator(".node-card .resource-card").count(), 3);
-  await capture("desktop-nodes");
+  await page.waitForFunction(() =>
+    document
+      .querySelector(".node-detail-content")
+      .getAnimations()
+      .every((a) => a.playState === "finished"),
+  );
+  assert.equal(await nodeDialog.locator(".resource-card").count(), 3);
+  assert(
+    (await nodeDialog.boundingBox()).width >
+      (await nodeTile.boundingBox()).width,
+  );
+  await nodeDialog
+    .getByLabel("Windows 工作站共享策略", { exact: true })
+    .selectOption("private");
+  await nodeDialog.getByRole("status").getByText("节点设置已保存").waitFor();
+  await nodeDialog
+    .getByLabel("Windows 工作站共享策略", { exact: true })
+    .selectOption("shared");
+  await nodeDialog.getByRole("status").getByText("节点设置已保存").waitFor();
+  await capture("desktop-node-detail");
+  await page.keyboard.press("Tab");
+  assert(
+    await nodeDialog.evaluate((el) => el.contains(document.activeElement)),
+  );
+  await page.keyboard.press("Escape");
+  await nodeDialog.waitFor({ state: "detached" });
+  assert(await nodeTile.evaluate((el) => document.activeElement === el));
+  await nodeTile.focus();
+  await page.keyboard.press("Enter");
+  await nodeDialog.waitFor();
+  await nodeDialog.getByLabel("收起节点详情", { exact: true }).click();
+  await nodeDialog.waitFor({ state: "detached" });
+  await nodeTile.click();
+  await nodeDialog.waitFor();
+  await page.mouse.click(5, 5);
+  await nodeDialog.waitFor({ state: "detached" });
   checks.push(
-    "CPU/memory/VRAM cards with physical, allocated and available capacity",
+    "compact node rings; animated expansion; detailed resources; Escape/keyboard and focus restore",
   );
   await nav("模型管理");
   await page.getByRole("button", { name: "登记模型", exact: true }).click();
@@ -203,6 +252,27 @@ try {
   await capture("mobile-grants");
   await nav("计算节点");
   await capture("mobile-nodes");
+  await page
+    .getByRole("button", { name: "查看 Windows 工作站 详情", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Windows 工作站", exact: true })
+    .waitFor();
+  await capture("mobile-node-detail");
+  await page.getByLabel("收起节点详情", { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Windows 工作站", exact: true })
+    .waitFor({ state: "detached" });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page
+    .getByRole("button", { name: "查看 Windows 工作站 详情", exact: true })
+    .click();
+  await page.getByLabel("收起节点详情", { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Windows 工作站", exact: true })
+    .waitFor({ state: "detached" });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  checks.push("mobile node detail and reduced-motion close");
   await nav("图像创作");
   await page.locator(".gallery-image img").waitFor();
   await capture("mobile-images");
