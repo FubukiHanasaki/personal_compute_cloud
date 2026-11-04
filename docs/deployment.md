@@ -12,7 +12,7 @@ chmod 600 .env
 # 三次独立生成，分别填 PCC_SECRET、POSTGRES_PASSWORD、PCC_APP_DB_PASSWORD：
 openssl rand -hex 32
 # PCC_DATABASE_URL 中使用 PCC_APP_DB_PASSWORD；随机 hex 避免 URL 转义问题。
-# 设置 PCC_DOMAIN、PCC_OWNER_USERNAME=Fubuki 和至少 16 字符的独立强密码。
+# 设置 PCC_DOMAIN、PCC_OWNER_USERNAME=Fubuki 和非空 Owner 密码（最多 256 字符，不强制复杂度）。
 docker compose up -d --build
 docker compose logs --tail=100 server caddy
 ```
@@ -32,7 +32,7 @@ Compose 中只在专用 edge 网络信任代理头。不要把 Server 直接发�
 | ENVIRONMENT | production；仅显式 development 允许 SQLite/不安全 Cookie |
 | DATABASE_URL | 生产 PostgreSQL + psycopg |
 | SECRET | 至少 32 字符强随机值，用于哈希令牌 |
-| OWNER_USERNAME / OWNER_PASSWORD | 仅首次创建 Owner；密码不低于 16 字符 |
+| OWNER_USERNAME / OWNER_PASSWORD | 仅首次创建 Owner；密码为 1–256 字符，不强制复杂度 |
 | STORAGE_ROOT | Compose 为 /data/artifacts，数据库不存二进制 |
 | HEARTBEAT_TIMEOUT / LEASE_SECONDS | 45 / 30 秒 |
 | USER_ACTIVE_JOB_LIMIT / USER_DAILY_JOB_LIMIT | 4 / 滚动 24 小时 1000 |

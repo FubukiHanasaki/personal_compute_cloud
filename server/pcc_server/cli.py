@@ -11,10 +11,12 @@ from .security import digest, hash_password, token, verify_password
 
 def bootstrap_owner(db, settings):
     if settings.owner_password:
-        if len(settings.owner_password) < 16 or settings.owner_password.startswith(
+        if len(settings.owner_password) > 256 or settings.owner_password.startswith(
             "REPLACE_"
         ):
-            raise ValueError("Owner password must be unique and at least 16 characters")
+            raise ValueError(
+                "Owner password exceeds 256 characters or is an unreplaced placeholder"
+            )
         with transaction(db):
             if not db.scalar(select(User).where(User.role == "owner")):
                 db.add(

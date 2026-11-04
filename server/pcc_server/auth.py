@@ -30,7 +30,7 @@ class Login(Strict):
 
 class NewUser(Strict):
     username: str = Field(min_length=1, max_length=80)
-    password: str = Field(min_length=16, max_length=256)
+    password: str = Field(min_length=1, max_length=256)
     role: Literal["admin", "user"] = "user"
 
 
@@ -53,7 +53,7 @@ class KeyCreate(Strict):
 
 class PasswordChange(Strict):
     current_password: str = Field(max_length=256)
-    new_password: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
 
 
 def user_view(user):

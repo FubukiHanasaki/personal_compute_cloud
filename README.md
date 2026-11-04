@@ -74,7 +74,7 @@ docker compose up -d --build
 docker compose logs --tail=100 server caddy
 ```
 
-`PCC_DATABASE_URL` 中的密码须与 `PCC_APP_DB_PASSWORD` 一致；Owner 密码至少 16 字符。首次启动自动迁移数据库并创建 Owner，已有账号的密码不会被环境变量覆盖。仅 Caddy 发布外部端口，Server 与数据库保持在容器网络内。
+`PCC_DATABASE_URL` 中的密码须与 `PCC_APP_DB_PASSWORD` 一致；Owner 密码接受 1–256 字符，不强制复杂度。首次启动自动迁移数据库并创建 Owner，已有账号的密码不会被环境变量覆盖。仅 Caddy 发布外部端口，Server 与数据库保持在容器网络内。
 
 升级和恢复前先备份，保留现有 `PCC_SECRET` 与数据卷；完整配置、备份及新目标恢复步骤见[部署文档](docs/deployment.md)。生产 Docker、域名证书和卷恢复需要在目标服务器验收。
 
@@ -172,7 +172,7 @@ curl "$PCC_URL/api/v1/jobs" \
 
 | 范围                             | 状态                                                                                                                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 本轮完整重构                     | SQLite 203 通过 / 15 条件跳过，PostgreSQL 205 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
+| 本轮完整重构                     | SQLite 214 通过 / 15 条件跳过，PostgreSQL 216 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
 | 受管内存预算解耦                 | 31 项新策略检查通过；真实小模型在 14869 MiB 物理内存、512 MiB 计算额度下使用 32768 MiB 进程上限成功执行，见[验收](docs/managed-memory-review.md)                      |
 | 模型支持复验                     | 7 个 Qwen 预设逐一登记通过；Ollama 小模型与 SD1.5 真实 GPU 推理及停止通过，目标模型范围见[复验记录](docs/model-revalidation-2026-11-04.md)                            |
 | 历史 Windows 模型逻辑 / 安全复查 | Ubuntu 定向模拟与契约检查 **57 项通过、7 项 Windows 用例跳过**；语法、静态检查及 wheel / sdist 校验通过，见[复查记录](docs/windows-models-review.md)                  |

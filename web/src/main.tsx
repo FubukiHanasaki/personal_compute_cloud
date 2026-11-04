@@ -1206,7 +1206,7 @@ function Access({
                   <input
                     type="password"
                     required
-                    minLength={16}
+                    minLength={1}
                     maxLength={256}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -1334,7 +1334,7 @@ function PasswordChange({
           <input
             type="password"
             required
-            minLength={16}
+            minLength={1}
             maxLength={256}
             autoComplete="new-password"
             value={next}

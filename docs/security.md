@@ -22,7 +22,7 @@ Ollama/ComfyUI 为节点管理员批准的本地运行时和模型，不接受�
 
 | 现象 | 检查与处理 |
 |---|---|
-| 启动拒绝配置 | 替换 REPLACE 值；生产使用 PostgreSQL、Secure Cookie；Owner 密码至少 16 字符 |
+| 启动拒绝配置 | 替换 REPLACE 值；生产使用 PostgreSQL、Secure Cookie；Owner 密码接受 1–256 字符，不强制复杂度 |
 | 网页 503 | 先运行前端 build；确认 PCC_WEB_ROOT 与 assets 存在 |
 | 401 | 区分用户密钥与节点凭证；检查到期/吊销；机器时钟需同步 |
 | 403 / CSRF | 浏览器重新 GET auth/me 获取 token；检查角色、密钥作用域、资源 grants |

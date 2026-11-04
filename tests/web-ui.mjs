@@ -504,6 +504,26 @@ try {
     "all seven Qwen presets register through UI and persist correct adapters, IDs and parameters",
   );
   await capture("desktop-qwen-presets");
+  await nav("访问与授权");
+  await page.getByRole("button", { name: "用户授权", exact: true }).click();
+  await page.getByLabel("用户名", { exact: true }).fill("qa-short-password");
+  await page.getByLabel("初始密码", { exact: true }).fill("1");
+  await page.getByRole("button", { name: "创建用户", exact: true }).click();
+  await page.getByRole("status").filter({ hasText: "用户已创建" }).waitFor();
+  await page.getByRole("button", { name: "账号安全", exact: true }).click();
+  await page.getByLabel("当前密码", { exact: true }).fill(credentials.password);
+  await page.getByLabel("新密码", { exact: true }).fill("1");
+  await page.getByRole("button", { name: "更新密码", exact: true }).click();
+  await page
+    .getByRole("heading", { name: "登录工作空间", exact: true })
+    .waitFor();
+  await page.getByLabel("用户名", { exact: true }).fill(credentials.username);
+  await page.getByLabel("密码", { exact: true }).fill("1");
+  await page.getByRole("button", { name: "进入控制台 →" }).click();
+  await page.getByRole("heading", { name: "工作空间", exact: true }).waitFor();
+  checks.push(
+    "single-character password works in user creation, password change and browser login",
+  );
   const gui = JSON.parse(await readFile(root + "/gui-url.json", "utf8"));
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(gui.url);
