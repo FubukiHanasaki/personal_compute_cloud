@@ -170,7 +170,8 @@ curl "$PCC_URL/api/v1/jobs" \
 
 | 范围                             | 状态                                                                                                                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 本轮完整重构                     | SQLite 171 通过 / 15 条件跳过，PostgreSQL 173 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
+| 本轮完整重构                     | SQLite 172 通过 / 15 条件跳过，PostgreSQL 174 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
+| 模型支持复验                     | 7 个 Qwen 预设逐一登记通过；Ollama 小模型与 SD1.5 真实 GPU 推理及停止通过，目标模型范围见[复验记录](docs/model-revalidation-2026-11-04.md)                            |
 | 历史 Windows 模型逻辑 / 安全复查 | Ubuntu 定向模拟与契约检查 **57 项通过、7 项 Windows 用例跳过**；语法、静态检查及 wheel / sdist 校验通过，见[复查记录](docs/windows-models-review.md)                  |
 | 既有 Linux 全链路验证            | 历史提交已完成真实 HTTPS → Server → Agent → 隔离 Worker → 授权工件，以及 PostgreSQL 备份恢复；详见[验收矩阵](docs/acceptance.md)                                      |
 | 既有真实 GPU 验证                | 历史提交已完成 Linux Ollama 与 ComfyUI / SD1.5 加载、推理和空闲卸载；证据见 [Ollama](docs/evidence/gpu-lifecycle.json)、[ComfyUI](docs/evidence/image-lifecycle.json) |

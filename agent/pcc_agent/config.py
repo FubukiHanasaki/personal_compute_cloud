@@ -15,6 +15,12 @@ class ComfyWorkflow(BaseModel):
     sampler_node: str = ""
     image_nodes: list[str] = Field(default_factory=list, max_length=4)
 
+    @model_validator(mode="after")
+    def unique_image_bindings(self):
+        if len(self.image_nodes) != len(set(self.image_nodes)):
+            raise ValueError("参考图片必须绑定到不同的 LoadImage 节点")
+        return self
+
 
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")

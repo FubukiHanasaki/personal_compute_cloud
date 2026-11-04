@@ -189,6 +189,16 @@ def test_media_and_parameter_limits():
         )
 
 
+def test_reference_images_cannot_share_a_workflow_binding(tmp_path):
+    with pytest.raises(ValueError, match="不同"):
+        ComfyWorkflow(
+            file=tmp_path / "approved.json",
+            prompt_node="text",
+            latent_node="latent",
+            image_nodes=["ref1", "ref1"],
+        )
+
+
 def test_non_thinking_ollama_model_omits_unsupported_switch(tmp_path):
     cfg = AgentConfig(server="https://example.com", name="test", work_root=tmp_path)
     backend = OllamaBackend(cfg, "qwen3-vl:8b-instruct", RES)

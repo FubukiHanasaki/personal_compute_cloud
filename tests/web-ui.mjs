@@ -446,6 +446,60 @@ try {
     .locator("body")
     .evaluate((el) => getComputedStyle(el).fontFamily);
   checks.push("font stack: " + fontFamily);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await nav("模型管理");
+  for (const [preset, adapter, model] of [
+    ["qwen-image-21", "comfyui", "qwen-image-2.1"],
+    ["qwen35-27b", "ollama", "qwen3.5:27b"],
+    ["qwen36-27b", "ollama", "qwen3.6:27b"],
+    ["qwen38-27b", "ollama", "qwen3.8:27b"],
+    ["ninfer-qwen36", "ninfer", "qwen3.6-27b"],
+    ["ninfer-qwen38", "ninfer", "qwen3.8-27b"],
+    ["qwen3-vl-8b", "ollama", "qwen3-vl:8b-instruct"],
+  ]) {
+    await page.getByRole("button", { name: "登记模型", exact: true }).click();
+    await page.getByLabel("模型预设", { exact: true }).selectOption(preset);
+    assert.equal(
+      await page.getByLabel("模板 ID", { exact: true }).inputValue(),
+      preset,
+    );
+    const registered = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/v1/admin/templates" &&
+        r.request().method() === "POST",
+    );
+    await page
+      .getByRole("button", { name: "保存模型设置", exact: true })
+      .click();
+    const response = await registered;
+    assert.equal(response.status(), 201, await response.text());
+    await page
+      .getByLabel("关闭模型编辑", { exact: true })
+      .waitFor({ state: "detached" });
+    const templates = await (
+      await page.request.get("http://127.0.0.1:8890/api/v1/templates?limit=100")
+    ).json();
+    const saved = templates.items.find((t) => t.id === preset);
+    assert(saved);
+    assert.equal(saved.worker, `${adapter}:${model}`);
+    assert.equal(saved.config.model, model);
+    if (adapter === "comfyui") {
+      assert.equal(saved.config.image_parameters.steps, 25);
+      assert.equal(saved.config.image_parameters.cfg, 1);
+      assert.equal(saved.config.image_parameters.default_size, "1024x1024");
+    } else {
+      assert.equal(saved.config.parameters.vision, true);
+      assert.equal(saved.config.parameters.context_length, 8192);
+      assert.equal(
+        saved.config.parameters.kv_cache_type,
+        adapter === "ninfer" ? "fp8" : "f16",
+      );
+    }
+  }
+  checks.push(
+    "all seven Qwen presets register through UI and persist correct adapters, IDs and parameters",
+  );
+  await capture("desktop-qwen-presets");
   const gui = JSON.parse(await readFile(root + "/gui-url.json", "utf8"));
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(gui.url);

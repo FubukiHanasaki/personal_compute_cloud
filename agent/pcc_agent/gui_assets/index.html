@@ -212,7 +212,7 @@
                 <label
                   >NInfer Serve 可执行文件<input
                     id="ninfer_executable"
-                    placeholder="ninfer-serve.exe 的完整路径"
+                    placeholder="ninfer-serve 的完整路径"
                 /></label>
                 <label
                   >专用回环端口<input
@@ -238,12 +238,12 @@
               <label
                 >批准的模型映射<textarea
                   id="ninfer_models"
-                  placeholder="qwen3.8-27b=C:\Models\qwen3_8_27b.ninfer"
+                  placeholder="qwen3.8-27b=/opt/models/qwen3_8_27b.ninfer"
                 ></textarea>
               </label>
               <p class="hint">
-                每行填写 模型ID=本地文件完整路径。上下文和 KV
-                等默认值在服务端维护。
+                每行填写 模型ID=本地文件完整路径。官方 27B 构建面向 Linux / RTX
+                5090，Windows 未验收。上下文和 KV 默认值在服务端维护。
               </p>
             </details>
             <details>

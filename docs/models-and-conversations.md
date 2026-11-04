@@ -27,16 +27,16 @@ Owner 在“模型管理”登记模型，Owner / 管理员可维护已有模型
 
 ## NInfer 节点配置
 
-仅接入管理员安装的 `ninfer-serve`。在 Agent GUI 的“NInfer”中填写可执行文件、GPU UUID、显存预算，以及逐行的 `模型ID=完整路径`。也可在 `agent.toml` 配置：
+仅接入管理员安装的 `ninfer-serve`。官方当前构建面向 Linux，Qwen3.6 / 3.8 27B 的支持目标为 RTX 5090；不要将通用配置入口理解为 Windows 或其他 GPU 的原生支持已验收。在 Agent GUI 的“NInfer”中填写可执行文件、GPU UUID、显存预算，以及逐行的 `模型ID=完整路径`。也可在 `agent.toml` 配置：
 
 ```toml
-ninfer_executable = 'C:\NInfer\ninfer-serve.exe'
+ninfer_executable = '/opt/ninfer/build/rtx5090-release/apps/ninfer-serve'
 ninfer_port = 8089
 ninfer_gpu_device = 'GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
 ninfer_vram_mb = 24576
 
 [ninfer_models]
-'qwen3.8-27b' = 'C:\Models\qwen3_8_27b.ninfer'
+'qwen3.8-27b' = '/opt/models/qwen3_8_27b.ninfer'
 ```
 
 替换示例 GPU UUID。NInfer 必须具备当前平台的进程 CPU/内存隔离能力；使用专属回环监听，不接管用户已运行的其他服务，固定单请求。上下文和 KV 通过启动参数传入；显存预算通过 `NINFER_VRAM_BUDGET_MIB` 传入。本文对接官方当前的 `--context-capacity` 字节池接口，旧版仅有 `--kv-capacity` Token 池接口不兼容，需更新 NInfer；不要盲目互换两种单位。当前选择 `bf16`、`fp8`、`int8`，不宣称其他存储格式已通过适配验证。
