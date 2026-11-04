@@ -3303,3 +3303,30 @@ progress::-moz-progress-bar {
     margin: 0;
   }
 }
+
+.managed-memory-budget {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-top: 18px;
+}
+.managed-memory-budget h3 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+}
+.managed-memory-budget dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+.managed-memory-budget dt {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.managed-memory-budget dd {
+  flex-shrink: 0;
+  margin: 0;
+}

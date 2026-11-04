@@ -32,6 +32,8 @@ Owner 在“模型管理”登记模型，Owner / 管理员可维护已有模型
 ```toml
 ninfer_executable = '/opt/ninfer/build/rtx5090-release/apps/ninfer-serve'
 ninfer_port = 8089
+managed_commit_budget_mb = 32768
+managed_available_memory_mb = { "ninfer:qwen3.8-27b" = 5120 }
 ninfer_gpu_device = 'GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
 ninfer_vram_mb = 24576
 
@@ -39,9 +41,11 @@ ninfer_vram_mb = 24576
 'qwen3.8-27b' = '/opt/models/qwen3_8_27b.ninfer'
 ```
 
-替换示例 GPU UUID。NInfer 必须具备当前平台的进程 CPU/内存隔离能力；使用专属回环监听，不接管用户已运行的其他服务，固定单请求。上下文和 KV 通过启动参数传入；显存预算通过 `NINFER_VRAM_BUDGET_MIB` 传入。本文对接官方当前的 `--context-capacity` 字节池接口，旧版仅有 `--kv-capacity` Token 池接口不兼容，需更新 NInfer；不要盲目互换两种单位。当前选择 `bf16`、`fp8`、`int8`，不宣称其他存储格式已通过适配验证。
+替换示例 GPU UUID。NInfer 必须具备当前平台的进程 CPU/内存隔离能力；使用专属回环监听，不接管用户已运行的其他服务，固定单请求。上下文和 KV 通过启动参数传入；显存预算通过 `NINFER_VRAM_BUDGET_MIB` 传入。本文对接官方当前的 `--context-capacity` 字节池接口，旧版仅有 `--kv-capacity` Token 池接口不兼容，需更新 NInfer；不要盲目互换两种单位。当前校验接受 `bf16`、`fp8`、`int8`、`nvfp4`、`k8v4`；保留本地已配置的 KV 值，不自动切换精度。实际运行能力取决于安装的 NInfer 和权重。
 
 ## Qwen Image 2.1
+
+所有受管模型均须配置独立预算和物理启动门槛，见[受管内存配置](managed-memory.md)。
 
 使用支持 `TextEncodeQwenImage21` / `QwenImage21Cache` 的 ComfyUI，并在其模型目录安装官方兼容的 diffusion model、Qwen3-VL text encoder 与 VAE。示例图是原生节点 API 格式，不使用 UI 子图或自定义插件：`deploy/workflows/qwen-image-2.1-api.example.json`。
 

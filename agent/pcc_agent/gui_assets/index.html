@@ -110,7 +110,7 @@
                   min="0.1"
                   step="0.1" /></label
               ><label
-                >内存分配 MB<input
+                >计算物理内存分配 MiB<input
                   id="allocatable_memory_mb"
                   type="number"
                   required
@@ -148,6 +148,26 @@
                   required
               /></label>
             </div>
+            <div class="grid">
+              <label
+                >推理内存总预算 MiB<input
+                  id="managed_commit_budget_mb"
+                  type="number"
+                  min="0"
+                  max="1048576"
+                  required
+              /></label>
+            </div>
+            <label
+              >模型启动空闲门槛 MiB<textarea
+                id="managed_available_memory_mb"
+                placeholder="ollama:完整模型ID=4096"
+              ></textarea>
+            </label>
+            <p class="hint">
+              每行
+              完整worker=整数MiB。推理预算独立于物理容量；所有启用的推理模型必须配置启动门槛。
+            </p>
             <div class="checks">
               <label
                 ><input

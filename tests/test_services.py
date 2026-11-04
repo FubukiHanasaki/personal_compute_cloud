@@ -1,3 +1,4 @@
+from managed_fixtures import configure_managed_memory
 import pytest
 from pcc_agent.config import AgentConfig
 from pcc_agent.services import ServiceManager
@@ -29,6 +30,7 @@ def test_lifecycle_idle_active_guard_and_gpu_lock(tmp_path):
         allocatable_vram_mb=1024,
     )
     manager = ServiceManager(config, factory=FakeBackend, clock=lambda: clock[0])
+    configure_managed_memory(manager, ["ollama:model"])
 
     def command(id):
         return {
@@ -121,6 +123,7 @@ def test_manual_model_load_does_not_block_heartbeat_reporting(tmp_path):
         allocatable_memory_mb=1024,
     )
     manager = ServiceManager(config, factory=SlowBackend)
+    configure_managed_memory(manager, ["ollama:model"])
     manager.sync(
         [
             {
@@ -155,6 +158,7 @@ def test_failed_stop_retains_backend_and_quarantines_resources(tmp_path):
 
     config = AgentConfig(server="https://example.com", name="test", work_root=tmp_path)
     manager = ServiceManager(config, factory=FailedStop)
+    configure_managed_memory(manager, ["ollama:model"])
     manager.sync(
         [
             {

@@ -1,3 +1,5 @@
+from managed_fixtures import configure_managed_memory
+
 """Inference protocol and model update safety. Author: FubukiHanasaki."""
 
 import base64
@@ -63,6 +65,8 @@ def test_ollama_translates_vision_and_admin_defaults(tmp_path):
 
 def test_ninfer_command_and_openai_multimodal_protocol(tmp_path):
     cfg = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"ninfer:qwen3.8-27b": 1024},
         server="https://example.com",
         name="test",
         work_root=tmp_path,
@@ -107,6 +111,7 @@ def test_changed_settings_stop_old_backend_before_reloading(tmp_path):
         allocatable_vram_mb=1024,
     )
     manager = ServiceManager(cfg, factory=FakeBackend)
+    configure_managed_memory(manager, ["ollama:m"])
     command = {
         "definition_id": "m",
         "config": {"worker": "ollama:m", "model": "m", "resources": RES},
@@ -133,6 +138,8 @@ def test_changed_settings_stop_old_backend_before_reloading(tmp_path):
 def test_qwen21_workflow_binds_only_approved_nodes(tmp_path):
     source = Path("deploy/workflows/qwen-image-2.1-api.example.json")
     cfg = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"comfyui:qwen": 1024},
         server="https://example.com",
         name="test",
         work_root=tmp_path,

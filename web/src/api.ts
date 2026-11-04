@@ -67,6 +67,8 @@ export type Node = {
     cpu_load: number;
     memory_load: number;
     workers: string[];
+    managed_commit_budget_mb: number;
+    managed_available_memory_mb: Record<string, number>;
   };
 };
 export type Service = {

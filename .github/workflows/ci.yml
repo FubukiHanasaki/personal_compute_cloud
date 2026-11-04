@@ -68,7 +68,7 @@ jobs:
         env:
           UV_PROJECT_ENVIRONMENT: tmp/venv
           UV_CACHE_DIR: tmp/uv-cache
-      - run: uv run --extra test pytest tests/test_agent_config.py tests/test_agent_gui.py tests/test_update_scripts.py tests/test_inference_adapters.py -W error::pytest.PytestUnhandledThreadExceptionWarning
+      - run: uv run --extra test pytest tests/test_agent_config.py tests/test_agent_gui.py tests/test_update_scripts.py tests/test_inference_adapters.py tests/test_managed_memory.py -W error::pytest.PytestUnhandledThreadExceptionWarning
         env:
           UV_PROJECT_ENVIRONMENT: tmp/venv
           UV_CACHE_DIR: tmp/uv-cache

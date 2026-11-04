@@ -47,6 +47,10 @@ def toml_config(values):
     lines = ["# Author: FubukiHanasaki"]
     for key, value in scalar.items():
         lines.append(f"{json.dumps(key)} = {json.dumps(value, ensure_ascii=False)}")
+    if values.get("managed_available_memory_mb"):
+        lines.append("\n[managed_available_memory_mb]")
+        for name, amount in values["managed_available_memory_mb"].items():
+            lines.append(f"{json.dumps(name)} = {amount}")
     if values.get("ninfer_models"):
         lines.append("\n[ninfer_models]")
         for name, path in values["ninfer_models"].items():

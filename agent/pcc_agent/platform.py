@@ -149,6 +149,8 @@ def discover(config, isolation=None, managed=None):
         workers.extend("ninfer:" + name for name in config.ninfer_models)
     return {
         "physical": physical,
+        "managed_commit_budget_mb": config.managed_commit_budget_mb,
+        "managed_available_memory_mb": config.managed_available_memory_mb,
         "allocatable": allocatable,
         "available": {
             "cpu": physical["cpu"],

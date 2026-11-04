@@ -163,6 +163,8 @@ def test_native_ollama_protocol_under_owned_job(monkeypatch, tmp_path):
     (tmp_path / "serve").write_text(FAKE_SERVER)
     monkeypatch.chdir(tmp_path)
     config = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"ollama:fixture": 1024},
         server="https://example.com",
         name="native",
         work_root=tmp_path,

@@ -91,6 +91,8 @@ with app.state.sessions() as db:
             "physical": {"cpu": 16, "memory_mb": 32768, "vram_mb": 12288},
             "allocatable": {"cpu": 4, "memory_mb": 8192, "vram_mb": 8192},
             "available": {"cpu": 16, "memory_mb": 22000, "vram_mb": 10000},
+            "managed_commit_budget_mb": 32768,
+            "managed_available_memory_mb": {"ollama:qwen3:8b": 4096, "comfyui:local-image": 4096},
             "cpu_load": 24,
             "memory_load": 33,
             "workers": ["ollama:qwen3:8b", "comfyui:local-image"],

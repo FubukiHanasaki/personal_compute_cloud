@@ -21,7 +21,7 @@ class Parameters(BaseModel):
     repetition_penalty: float = Field(default=1.0, ge=1, le=2)
     seed: int = Field(default=0, ge=0, le=2**31 - 1)
     thinking: bool = False
-    kv_cache_type: Literal["f16", "q8_0", "q4_0", "bf16", "fp8", "int8"] = "f16"
+    kv_cache_type: Literal["f16", "q8_0", "q4_0", "bf16", "fp8", "int8", "nvfp4", "k8v4"] = "f16"
     kv_capacity_mb: int = Field(default=0, ge=0, le=65536)
     prefix_reuse: bool = True
     flash_attention: bool = True
@@ -47,8 +47,8 @@ class ImageParameters(BaseModel):
 def parameters(value=None, adapter="ollama"):
     result = Parameters(**(value or {})).model_dump()
     if adapter == "ninfer":
-        if result["kv_cache_type"] not in {"bf16", "fp8", "int8"}:
-            raise ValueError("NInfer KV 类型需要 bf16、fp8 或 int8")
+        if result["kv_cache_type"] not in {"bf16", "fp8", "int8", "nvfp4", "k8v4"}:
+            raise ValueError("NInfer KV 类型需要 bf16、fp8、int8、nvfp4 或 k8v4")
         if result["top_k"] > 20:
             raise ValueError("NInfer top_k 最大为 20")
         if result["repetition_penalty"] != 1.0:

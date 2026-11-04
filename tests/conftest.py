@@ -63,6 +63,12 @@ def register_node(client, auth, mode="shared", workers=None):
         "workers": workers or ["compute.stats"],
         "isolation": ["linux-bwrap-rlimit"],
     }
+    caps["managed_commit_budget_mb"] = 32768
+    caps["managed_available_memory_mb"] = {
+        worker: 1024
+        for worker in caps["workers"]
+        if worker.startswith(("ollama:", "comfyui:", "ninfer:"))
+    }
     assert (
         client.post(
             "/internal/v1/nodes/heartbeat",

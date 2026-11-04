@@ -1,3 +1,5 @@
+from managed_fixtures import configure_managed_memory
+
 """Logic/security regressions using only fake processes and mock HTTP. FubukiHanasaki."""
 
 import json
@@ -37,6 +39,7 @@ def manager(tmp_path, factory=Backend):
         allocatable_memory_mb=1024,
     )
     result = ServiceManager(cfg, factory=factory)
+    configure_managed_memory(result, ["ollama:local"])
     result.sync(
         [
             {
@@ -62,7 +65,13 @@ def test_reused_model_respects_reduced_local_budget_and_drains(
     service = services.acquire("model")
     services.ready(service)
     backend = service.backend
-    setattr(services.config, "allocatable_" + resource, reduced)
+    setattr(
+        services.config,
+        "managed_commit_budget_mb"
+        if resource == "memory_mb"
+        else "allocatable_" + resource,
+        reduced,
+    )
     services.tick()
     assert not backend.stopped  # active requests drain rather than being aborted
     services.release(service)
@@ -141,7 +150,7 @@ def test_manual_warmup_obeys_local_load_protection(tmp_path, metric, value):
 
 def test_manual_warmup_cannot_exceed_discovered_physical_allowance(tmp_path):
     services = manager(tmp_path)
-    services.capabilities = {"allocatable": {"memory_mb": 256}}
+    services.capabilities["managed_commit_budget_mb"] = 256
     services.tick()
     assert services.services["model"].backend is None
 

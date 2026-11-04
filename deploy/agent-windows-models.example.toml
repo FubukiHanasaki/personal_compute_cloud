@@ -7,6 +7,7 @@ work_root = 'tmp\agent'
 mode = "maintenance"
 allocatable_cpu = 4
 allocatable_memory_mb = 12288
+managed_commit_budget_mb = 32768
 allocatable_vram_mb = 0
 enable_compute = false
 service_idle_seconds = 300
@@ -30,3 +31,7 @@ file = 'C:\PCC\deploy\workflows\sd15-api.example.json'
 prompt_node = "6"
 latent_node = "5"
 min_vram_mb = 4096
+
+[managed_available_memory_mb]
+"ollama:APPROVED_LOCAL_MODEL" = 4096
+"comfyui:local-image" = 4096

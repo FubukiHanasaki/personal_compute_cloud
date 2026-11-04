@@ -41,6 +41,8 @@ def test_config_roundtrip_and_conflict_preserve_all_settings(tmp_path):
 
 def test_toml_serializer_preserves_windows_paths_and_omits_null():
     config = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"ninfer:qwen3.8-27b": 1024, "comfyui:a.b": 1024},
         server="https://example.com",
         name="node",
         comfyui_python=r"C:\PCC\Python\python.exe",

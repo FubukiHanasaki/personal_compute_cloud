@@ -87,6 +87,8 @@ Linux compute 要求系统安装 bubblewrap 且内核允许非特权命名空间
 ollama_executable = "/absolute/path/to/ollama"
 ollama_model_root = "tmp/ollama-models"
 ollama_models = ["replace-with-admin-installed-model"]
+managed_commit_budget_mb = 32768
+managed_available_memory_mb = { "ollama:replace-with-admin-installed-model" = 4096 }
 ollama_port = 11435
 # 默认 CPU；GPU 时明确指定本机设备 UUID，并设置经过验证的显存预算。
 ollama_gpu_device = ""
@@ -137,3 +139,5 @@ min_vram_mb = 4096
 实例采用 Linux 用户 cgroup 或 Windows Job Object 与回环监听，只管理自己的进程。单次请求等待整个工作流完成后下载有界 PNG，路径只接受批准的输出形式；随后清理本次历史和 PCC 专用临时输出，服务停止时回收整个 staging。空闲先调用原生 `/free`，再终止自己的 scope / Job；不会向现存 ComfyUI 服务发送全局终止。
 
 协议依据 [ComfyUI 官方示例](https://github.com/comfyanonymous/ComfyUI/blob/master/script_examples/basic_api_example.py) 与[服务器接口](https://github.com/comfyanonymous/ComfyUI/blob/master/server.py)。上线前需在管理员实际版本、工作流、模型与 GPU 上完成一次生成和卸载验收。
+
+受管推理采用独立的内存预算与物理启动门槛；计算资源配置不再限制推理提交额度。升级必须补齐全部已启用 worker 的门槛，详见[内存配置与升级](managed-memory.md)。

@@ -63,6 +63,8 @@ def test_shipped_windows_model_config_and_workflow_are_consistent(tmp_path):
     binding = config["comfyui_workflows"]["local-image"]
     workflow = root / "deploy/workflows/sd15-api.example.json"
     cfg = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"comfyui:local-image": 1024},
         server="https://example.com",
         name="sample",
         work_root=tmp_path,
@@ -460,6 +462,8 @@ def test_windows_discovery_requires_model_job_probe_without_claiming_compute(
     monkeypatch.setattr(module.platform, "system", lambda: "Windows")
     monkeypatch.setattr(module, "gpu_metrics", lambda: [])
     config = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"ollama:local-model": 1024},
         server="https://example.com",
         name="win",
         work_root=tmp_path,
@@ -516,6 +520,8 @@ def test_ollama_lifecycle_uses_controller_and_refuses_unowned_endpoint(
     executable = tmp_path / "ollama.exe"
     executable.touch()
     config = AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"ollama:local": 1024},
         server="https://example.com",
         name="win",
         work_root=tmp_path,

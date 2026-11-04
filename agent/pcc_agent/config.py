@@ -2,6 +2,12 @@ from pathlib import Path
 import tomllib
 from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .memory import (
+    ManagedWorker,
+    ManagedThreshold,
+    ManagedBudget,
+    validate_memory_config,
+)
 
 GPU_DEVICE_PATTERN = r"^(?:GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})?$"
 
@@ -33,6 +39,10 @@ class AgentConfig(BaseModel):
     allowed_users: list[str] = []
     allocatable_cpu: float = Field(default=1, ge=0.1)
     allocatable_memory_mb: int = Field(default=512, ge=256)
+    managed_commit_budget_mb: ManagedBudget = 0
+    managed_available_memory_mb: dict[ManagedWorker, ManagedThreshold] = Field(
+        default_factory=dict, max_length=32
+    )
     allocatable_vram_mb: int = Field(default=0, ge=0)
     max_cpu_load: float = Field(default=85, ge=1, le=100)
     max_memory_load: float = Field(default=90, ge=1, le=100)
@@ -63,6 +73,16 @@ class AgentConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_config(self):
+        workers = []
+        if self.ollama_executable:
+            workers.extend("ollama:" + m for m in self.ollama_models)
+        if self.comfyui_python and self.comfyui_script:
+            workers.extend("comfyui:" + m for m in self.comfyui_workflows)
+        if self.ninfer_executable:
+            workers.extend("ninfer:" + m for m in self.ninfer_models)
+        validate_memory_config(
+            workers, self.managed_commit_budget_mb, self.managed_available_memory_mb
+        )
         parsed = urlparse(self.server)
         if not parsed.hostname or (
             parsed.port is not None and not 1 <= parsed.port <= 65535

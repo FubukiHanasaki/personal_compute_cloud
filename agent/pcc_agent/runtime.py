@@ -68,6 +68,8 @@ class Agent:
                 "allowed_users",
                 "allocatable_cpu",
                 "allocatable_memory_mb",
+                "managed_commit_budget_mb",
+                "managed_available_memory_mb",
                 "allocatable_vram_mb",
                 "max_cpu_load",
                 "max_memory_load",

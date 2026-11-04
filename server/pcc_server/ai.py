@@ -111,7 +111,7 @@ def generate_image(
             request.app.state.settings,
             request.headers.get("Idempotency-Key"),
         )
-    return view(job)
+    return view(job, db, request.app.state.settings)
 
 
 @router.post("/v1/chat/completions")

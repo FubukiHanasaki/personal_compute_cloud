@@ -1,5 +1,11 @@
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pcc_agent.memory import (
+    ManagedWorker,
+    ManagedThreshold,
+    ManagedBudget,
+    validate_memory_config,
+)
 
 
 class Strict(BaseModel):
@@ -22,6 +28,19 @@ class Capabilities(Strict):
     memory_load: float = Field(default=0, ge=0, le=100)
     disk_free_mb: int = Field(default=0, ge=0)
     isolation: list[str] = Field(default_factory=list, max_length=16)
+    managed_commit_budget_mb: ManagedBudget = 0
+    managed_available_memory_mb: dict[ManagedWorker, ManagedThreshold] = Field(
+        default_factory=dict, max_length=32
+    )
+
+    @model_validator(mode="after")
+    def memory_contract(self):
+        validate_memory_config(
+            self.workers,
+            self.managed_commit_budget_mb,
+            self.managed_available_memory_mb,
+        )
+        return self
 
 
 class Policy(Strict):

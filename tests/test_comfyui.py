@@ -56,6 +56,8 @@ def config(tmp_path):
         )
     )
     return AgentConfig(
+        managed_commit_budget_mb=32768,
+        managed_available_memory_mb={"comfyui:local-image": 1024},
         server="https://example.com",
         name="test",
         work_root=tmp_path,

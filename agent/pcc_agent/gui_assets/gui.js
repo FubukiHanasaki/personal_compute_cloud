@@ -21,6 +21,7 @@ const stringFields = [
 const numericFields = [
   "allocatable_cpu",
   "allocatable_memory_mb",
+  "managed_commit_budget_mb",
   "allocatable_vram_mb",
   "max_cpu_load",
   "max_memory_load",
@@ -160,6 +161,11 @@ function render() {
   for (const key of boolFields) $(key).checked = config[key];
   $("allowed_users").value = config.allowed_users.join(", ");
   $("ollama_models").value = config.ollama_models.join("\n");
+  $("managed_available_memory_mb").value = Object.entries(
+    config.managed_available_memory_mb || {},
+  )
+    .map(([worker, amount]) => `${worker}=${amount}`)
+    .join("\n");
   $("ninfer_models").value = Object.entries(config.ninfer_models || {})
     .map(([name, path]) => `${name}=${path}`)
     .join("\n");
@@ -216,6 +222,19 @@ $("config-form").onsubmit = (e) => {
       .value.split(/[,，\n]/)
       .map((v) => v.trim())
       .filter(Boolean);
+    config.managed_available_memory_mb = Object.create(null);
+    for (const line of $("managed_available_memory_mb")
+      .value.split(/\r?\n/)
+      .filter((v) => v.trim())) {
+      const index = line.indexOf("="),
+        worker = line.slice(0, index).trim(),
+        amount = line.slice(index + 1).trim();
+      if (index < 1 || !/^\d+$/.test(amount))
+        throw new Error("启动门槛格式为 完整worker=整数MiB");
+      if (Object.hasOwn(config.managed_available_memory_mb, worker))
+        throw new Error("启动门槛 worker 重复");
+      config.managed_available_memory_mb[worker] = Number(amount);
+    }
     config.ninfer_models = Object.fromEntries(
       $("ninfer_models")
         .value.split(/\r?\n/)

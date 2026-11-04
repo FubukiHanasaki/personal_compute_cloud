@@ -460,7 +460,7 @@ export function TemplateEditor({
                         }
                       >
                         {(adapter === "ninfer"
-                          ? ["bf16", "fp8", "int8"]
+                          ? ["bf16", "fp8", "int8", "nvfp4", "k8v4"]
                           : ["f16", "q8_0", "q4_0"]
                         ).map((v) => (
                           <option key={v}>{v}</option>

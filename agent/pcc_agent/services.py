@@ -13,6 +13,7 @@ import httpx
 from .managed_process import ManagedProcess, environment
 from .errors import WorkerStopUnconfirmed
 from .inference import parameters, ollama_messages, validate_messages
+from .memory import is_managed, resource_block_reason
 
 
 def check_loopback_port(port):
@@ -340,9 +341,22 @@ class ServiceManager:
                 raise RuntimeError(
                     "Service is draining, busy or awaiting stop confirmation"
                 )
+            if any(
+                other is not service
+                and other.backend is not None
+                and other.state in {"error", "stopping"}
+                for other in self.services.values()
+            ):
+                raise RuntimeError("Previous service is awaiting stop confirmation")
             if approved_config and any(
                 service.config.get(key) != approved_config.get(key)
-                for key in ("resources", "parameters", "image_parameters")
+                for key in (
+                    "worker",
+                    "model",
+                    "resources",
+                    "parameters",
+                    "image_parameters",
+                )
             ):
                 if not self._stop(service):
                     raise RuntimeError("Previous model settings are still in use")
@@ -351,6 +365,9 @@ class ServiceManager:
                 requested = service.config["resources"]
                 if self._exceeds_budget(service):
                     raise RuntimeError("Service exceeds local allocatable resources")
+                reason = self._admission_reason(service)
+                if reason:
+                    raise RuntimeError(reason)
             if service.backend is None and service.config["worker"].startswith(
                 ("ollama:", "comfyui:", "ninfer:")
             ):
@@ -395,14 +412,49 @@ class ServiceManager:
             ("ollama:", "comfyui:", "ninfer:")
         ) and any(
             service.config["resources"][key]
-            > min(
-                getattr(self.config, "allocatable_" + key),
-                self.capabilities.get("allocatable", {}).get(
-                    key, getattr(self.config, "allocatable_" + key)
-                ),
+            > (
+                self.config.managed_commit_budget_mb
+                if key == "memory_mb"
+                else min(
+                    getattr(self.config, "allocatable_" + key),
+                    self.capabilities.get("allocatable", {}).get(
+                        key, getattr(self.config, "allocatable_" + key)
+                    ),
+                )
             )
             for key in ("cpu", "memory_mb", "vram_mb")
         )
+
+    def _admission_reason(self, service):
+        if not is_managed(service.config["worker"]):
+            return None
+        caps = self._memory_capabilities()
+        if caps.get("cpu_load", 100) >= self.config.max_cpu_load:
+            return "节点 CPU 负载过高"
+        if caps.get("memory_load", 100) >= self.config.max_memory_load:
+            return "节点内存负载过高"
+        used = {"cpu": 0, "memory_mb": 0, "vram_mb": 0}
+        for other in self.services.values():
+            if other is not service and (
+                other.active_requests
+                or other.state in {"starting", "stopping", "error"}
+            ):
+                for key in used:
+                    used[key] += other.config["resources"][key]
+        return resource_block_reason(
+            caps, service.config["worker"], service.config["resources"], used
+        )
+
+    def _memory_capabilities(self):
+        # Runtime always refreshes hardware before dispatch. Missing telemetry
+        # must fail closed; never manufacture physical available memory.
+        caps = dict(self.capabilities)
+        caps["managed_commit_budget_mb"] = min(
+            self.config.managed_commit_budget_mb,
+            caps.get("managed_commit_budget_mb", self.config.managed_commit_budget_mb),
+        )
+        caps["managed_available_memory_mb"] = self.config.managed_available_memory_mb
+        return caps
 
     def ready(self, service):
         with self.lock:
@@ -472,6 +524,10 @@ class ServiceManager:
                     and self.capabilities.get("memory_load", 0)
                     < self.config.max_memory_load
                 ):
+                    reason = self._admission_reason(service)
+                    if reason:
+                        service.error = reason
+                        continue
                     # Reserve synchronously, load outside the heartbeat thread/lock.
                     try:
                         self.acquire(service.definition_id)

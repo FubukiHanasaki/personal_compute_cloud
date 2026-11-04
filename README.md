@@ -164,13 +164,16 @@ curl "$PCC_URL/api/v1/jobs" \
 
 真实 `.env`、`agent.toml`、凭证、证书私钥、数据库、模型权重与运行日志均应保留在本地。安全配置和故障排查见[安全文档](docs/security.md)。
 
+本版受管推理升级须同时配置独立内存预算与模型物理启动门槛，不兼容旧推理配置；操作顺序见[受管内存与升级](docs/managed-memory.md)。
+
 ## 当前验证状态
 
 项目继续标记为开发版，历史证据与当前修改分开记录：
 
 | 范围                             | 状态                                                                                                                                                                  |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 本轮完整重构                     | SQLite 172 通过 / 15 条件跳过，PostgreSQL 174 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
+| 本轮完整重构                     | SQLite 203 通过 / 15 条件跳过，PostgreSQL 205 通过 / 13 Windows 跳过；Ubuntu 浏览器交互与桌面/移动截图通过，见[本轮记录](docs/workspace-review-2026-11-04.md)         |
+| 受管内存预算解耦                 | 31 项新策略检查通过；真实小模型在 14869 MiB 物理内存、512 MiB 计算额度下使用 32768 MiB 进程上限成功执行，见[验收](docs/managed-memory-review.md)                      |
 | 模型支持复验                     | 7 个 Qwen 预设逐一登记通过；Ollama 小模型与 SD1.5 真实 GPU 推理及停止通过，目标模型范围见[复验记录](docs/model-revalidation-2026-11-04.md)                            |
 | 历史 Windows 模型逻辑 / 安全复查 | Ubuntu 定向模拟与契约检查 **57 项通过、7 项 Windows 用例跳过**；语法、静态检查及 wheel / sdist 校验通过，见[复查记录](docs/windows-models-review.md)                  |
 | 既有 Linux 全链路验证            | 历史提交已完成真实 HTTPS → Server → Agent → 隔离 Worker → 授权工件，以及 PostgreSQL 备份恢复；详见[验收矩阵](docs/acceptance.md)                                      |

@@ -144,6 +144,10 @@ try {
       .every((a) => a.playState === "finished"),
   );
   assert.equal(await nodeDialog.locator(".resource-card").count(), 3);
+  await nodeDialog
+    .getByRole("region", { name: "推理内存配置", exact: true })
+    .waitFor();
+  await nodeDialog.getByText("32.0 GiB", { exact: true }).waitFor();
   assert(
     (await nodeDialog.boundingBox()).width >
       (await nodeTile.boundingBox()).width,
@@ -514,8 +518,23 @@ try {
     .getByLabel("服务器地址", { exact: true })
     .fill("https://example.com");
   await page.getByLabel("节点名称", { exact: true }).fill("GUI 测试节点");
+  await page
+    .getByRole("navigation", { name: "配置导航" })
+    .getByRole("link", { name: "资源与共享", exact: true })
+    .click();
+  await page.getByLabel("推理内存总预算 MiB", { exact: true }).fill("32768");
+  await page
+    .getByLabel("模型启动空闲门槛 MiB", { exact: true })
+    .fill("ollama:qa-model=4096");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "配置已保存" }).waitFor();
+  await capture("desktop-agent-memory");
+  const savedMemoryConfig = await readFile(root + "/agent.toml", "utf8");
+  assert(savedMemoryConfig.includes('"managed_commit_budget_mb" = 32768'));
+  assert(savedMemoryConfig.includes('"ollama:qa-model" = 4096'));
+  checks.push(
+    "separate inference budget and physical startup thresholds save through Agent GUI",
+  );
   assert(
     (await readFile(root + "/agent.toml", "utf8")).includes("GUI 测试节点"),
   );
@@ -551,6 +570,11 @@ try {
   checks.push("duplicate workflow ID rejected");
   await page.setViewportSize({ width: 390, height: 844 });
   await capture("mobile-agent-models");
+  await page
+    .getByRole("navigation", { name: "配置导航" })
+    .getByRole("link", { name: "资源与共享", exact: true })
+    .click();
+  await capture("mobile-agent-memory");
   await page
     .getByRole("navigation", { name: "配置导航" })
     .getByRole("link", { name: "连接", exact: true })

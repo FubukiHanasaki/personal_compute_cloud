@@ -32,6 +32,7 @@ from .security import (
     digest,
     require_scope,
 )
+from pcc_agent.memory import resource_block_reason
 from .storage import LocalStorage
 from .templates import accessible, validate_input
 
@@ -100,7 +101,7 @@ def fingerprint(data):
     return hashlib.sha256(encoded).hexdigest()
 
 
-def view(job):
+def view(job, db=None, settings=None, state=None):
     return {
         "job_id": job.id,
         "status": job.status,
@@ -112,7 +113,9 @@ def view(job):
         "result": job.result,
         "error": job.error,
         "requirements": job.requirements,
-        "queue_reason": "等待满足模板能力、共享策略和资源额度的在线节点"
+        "queue_reason": (
+            queue_reason(db, job, settings, state) if db is not None else "等待调度检查"
+        )
         if job.status == "queued"
         else None,
     }
@@ -238,14 +241,16 @@ def policy_allows(policy, node, job):
     return True
 
 
-def eligible(node, job, template, settings, used, active_count, reclaimable=None):
+def ineligible_reason(
+    node, job, template, settings, used, active_count, reclaimable=None
+):
     caps = node.capabilities
-    if (
-        node.disabled
-        or time.time() - node.last_seen > settings.heartbeat_timeout
-        or template.worker not in caps.get("workers", [])
-    ):
-        return False
+    if node.disabled:
+        return "节点已禁用"
+    if time.time() - node.last_seen > settings.heartbeat_timeout:
+        return "节点离线或心跳过期"
+    if template.worker not in caps.get("workers", []):
+        return "节点未启用所需模型能力"
     if template.worker in {
         "compute.stats",
         "synthetic.chat",
@@ -253,29 +258,32 @@ def eligible(node, job, template, settings, used, active_count, reclaimable=None
     } and not {"linux-bwrap-rlimit", "windows-appcontainer-job"}.intersection(
         caps.get("isolation", [])
     ):
-        return False
+        return "执行隔离不可用"
     for policy in (node.policy, node.local_policy):
-        if not policy_allows(policy, node, job) or active_count >= policy.get(
-            "max_concurrency", 1
-        ):
-            return False
-        if caps.get("cpu_load", 100) >= policy.get("max_cpu_load", 85) or caps.get(
-            "memory_load", 100
-        ) >= policy.get("max_memory_load", 90):
-            return False
-    for key, value in job.requirements.items():
-        capacity = min(
-            caps.get("allocatable", {}).get(key, 0),
-            caps.get("physical", {}).get(key, 0),
+        if not policy_allows(policy, node, job):
+            return "节点共享策略或维护模式阻止执行"
+        if active_count >= policy.get("max_concurrency", 1):
+            return "节点并发额度已满"
+        if caps.get("cpu_load", 100) >= policy.get("max_cpu_load", 85):
+            return "节点 CPU 负载过高"
+        if caps.get("memory_load", 100) >= policy.get("max_memory_load", 90):
+            return "节点内存负载过高"
+    return resource_block_reason(
+        caps,
+        template.worker,
+        job.requirements,
+        used,
+        (reclaimable or {}).get(node.id, {}),
+    )
+
+
+def eligible(node, job, template, settings, used, active_count, reclaimable=None):
+    return (
+        ineligible_reason(
+            node, job, template, settings, used, active_count, reclaimable
         )
-        available = min(
-            caps.get("physical", {}).get(key, 0),
-            caps.get("available", {}).get(key, 0)
-            + (reclaimable or {}).get(node.id, {}).get(key, 0),
-        )
-        if capacity - used.get(key, 0) < value or available < value:
-            return False
-    return True
+        is None
+    )
 
 
 def lease_token(attempt, settings):
@@ -321,7 +329,7 @@ def submit(
             request.app.state.settings,
             request.headers.get("Idempotency-Key"),
         )
-    return view(job)
+    return view(job, db, request.app.state.settings)
 
 
 @router.get("/api/v1/jobs")
@@ -342,7 +350,12 @@ def list_jobs(
         if task_type:
             query = query.where(Job.task_type == task_type)
         rows = db.scalars(query.offset(offset).limit(limit)).all()
-    return {"items": [view(j) for j in rows], "limit": limit, "offset": offset}
+    state = scheduling_state(db) if any(j.status == "queued" for j in rows) else None
+    return {
+        "items": [view(j, db, request.app.state.settings, state) for j in rows],
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/api/v1/jobs/{job_id}")
@@ -353,7 +366,7 @@ def get_job(
     with transaction(db):
         sweep(db, request.app.state.settings)
         job = owned(db, job_id, user)
-    return view(job)
+    return view(job, db, request.app.state.settings)
 
 
 @router.post("/api/v1/jobs/{job_id}/cancel", status_code=202)
@@ -387,6 +400,95 @@ def abort_node(node_id: str, user=Depends(admin), db=Depends(get_db)):
     return {"cancel_requested": len(jobs)}
 
 
+def scheduling_state(db):
+    attempts = db.scalars(
+        select(JobAttempt).where(JobAttempt.status.in_(["active", "reconciling"]))
+    ).all()
+    used = {
+        n.id: {"cpu": 0, "memory_mb": 0, "vram_mb": 0} for n in db.scalars(select(Node))
+    }
+    counts = {n: 0 for n in used}
+    for a in attempts:
+        active_job = db.get(Job, a.job_id)
+        for k in used[a.node_id]:
+            used[a.node_id][k] += active_job.requirements[k]
+        counts[a.node_id] += 1
+    for instance in db.scalars(
+        select(ServiceInstance).where(
+            (ServiceInstance.active_requests > 0)
+            | ServiceInstance.state.in_(["starting", "stopping", "error"])
+        )
+    ):
+        represented = any(
+            a.node_id == instance.node_id
+            and db.get(Job, a.job_id).template_id == instance.definition_id
+            for a in attempts
+        )
+        if not represented and instance.node_id in used:
+            counts[instance.node_id] += 1
+            resources = db.get(
+                ServiceDefinition, instance.definition_id
+            ).allowed_config["resources"]
+            for key in used[instance.node_id]:
+                used[instance.node_id][key] += resources[key]
+    reclaimable = {}
+    for instance in db.scalars(
+        select(ServiceInstance).where(
+            ServiceInstance.active_requests == 0,
+            ServiceInstance.state.in_(["idle", "ready"]),
+        )
+    ):
+        resources = db.get(ServiceDefinition, instance.definition_id).allowed_config[
+            "resources"
+        ]
+        budget = reclaimable.setdefault(
+            instance.node_id, {"cpu": 0, "memory_mb": 0, "vram_mb": 0}
+        )
+        for key in budget:
+            budget[key] += resources[key]
+    stopped_services = {
+        (i.node_id, i.definition_id)
+        for i in db.scalars(
+            select(ServiceInstance).where(ServiceInstance.desired_state == "stopped")
+        )
+    }
+    return used, counts, reclaimable, stopped_services
+
+
+def queue_reason(db, job, settings, state=None):
+    template = db.get(TaskTemplate, job.template_id)
+    owner = db.get(User, job.owner_id)
+    if (
+        not template
+        or not owner
+        or owner.status != "active"
+        or not accessible(owner, template)
+    ):
+        return "提交者或模型授权已失效"
+    used, counts, reclaimable, stopped = state or scheduling_state(db)
+    reasons = set()
+    for node in db.scalars(select(Node)):
+        reason = (
+            "模型服务被手动停止"
+            if (node.id, template.id) in stopped
+            else ineligible_reason(
+                node,
+                job,
+                template,
+                settings,
+                used.get(node.id, {}),
+                counts.get(node.id, 0),
+                reclaimable,
+            )
+        )
+        if reason is None:
+            return "等待符合条件的节点领取任务"
+        reasons.add(reason)
+    return "等待可用算力：" + (
+        "；".join(sorted(reasons)) if reasons else "暂无计算节点"
+    )
+
+
 def claim_once(body, node, db, settings):
     with transaction(db):
         sweep(db, settings)
@@ -408,60 +510,7 @@ def claim_once(body, node, db, settings):
             return claim_view(
                 job, previous, db.get(TaskTemplate, job.template_id), settings
             )
-        attempts = db.scalars(
-            select(JobAttempt).where(JobAttempt.status.in_(["active", "reconciling"]))
-        ).all()
-        used = {
-            n.id: {"cpu": 0, "memory_mb": 0, "vram_mb": 0}
-            for n in db.scalars(select(Node))
-        }
-        counts = {n: 0 for n in used}
-        for a in attempts:
-            active_job = db.get(Job, a.job_id)
-            for k in used[a.node_id]:
-                used[a.node_id][k] += active_job.requirements[k]
-            counts[a.node_id] += 1
-        for instance in db.scalars(
-            select(ServiceInstance).where(
-                (ServiceInstance.active_requests > 0)
-                | ServiceInstance.state.in_(["starting", "stopping", "error"])
-            )
-        ):
-            represented = any(
-                a.node_id == instance.node_id
-                and db.get(Job, a.job_id).template_id == instance.definition_id
-                for a in attempts
-            )
-            if not represented and instance.node_id in used:
-                counts[instance.node_id] += 1
-                resources = db.get(
-                    ServiceDefinition, instance.definition_id
-                ).allowed_config["resources"]
-                for key in used[instance.node_id]:
-                    used[instance.node_id][key] += resources[key]
-        reclaimable = {}
-        for instance in db.scalars(
-            select(ServiceInstance).where(
-                ServiceInstance.active_requests == 0,
-                ServiceInstance.state.in_(["idle", "ready"]),
-            )
-        ):
-            resources = db.get(
-                ServiceDefinition, instance.definition_id
-            ).allowed_config["resources"]
-            budget = reclaimable.setdefault(
-                instance.node_id, {"cpu": 0, "memory_mb": 0, "vram_mb": 0}
-            )
-            for key in budget:
-                budget[key] += resources[key]
-        stopped_services = {
-            (i.node_id, i.definition_id)
-            for i in db.scalars(
-                select(ServiceInstance).where(
-                    ServiceInstance.desired_state == "stopped"
-                )
-            )
-        }
+        used, counts, reclaimable, stopped_services = scheduling_state(db)
         for job in db.scalars(
             select(Job).where(Job.status == "queued").order_by(Job.created_at)
         ):

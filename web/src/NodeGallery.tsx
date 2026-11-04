@@ -245,6 +245,28 @@ function NodeDetail({
         </header>
         <div className="node-detail-content">
           <NodeResources node={node} />
+          <section className="managed-memory-budget" aria-label="推理内存配置">
+            <h3>
+              推理内存预算{" "}
+              <strong>
+                {(
+                  (node.capabilities.managed_commit_budget_mb || 0) / 1024
+                ).toFixed(1)}{" "}
+                GiB
+              </strong>
+            </h3>
+            <p className="small muted">启动空闲门槛</p>
+            <dl>
+              {Object.entries(
+                node.capabilities.managed_available_memory_mb || {},
+              ).map(([worker, amount]) => (
+                <div key={worker}>
+                  <dt>{worker}</dt>
+                  <dd>{(amount / 1024).toFixed(1)} GiB</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
           <div className="node-detail-meta">
             <span>
               本地模式{" "}

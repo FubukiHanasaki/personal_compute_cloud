@@ -84,14 +84,16 @@ export function NodeResources({ node }: { node: Node }) {
           >
             <div className="resource-card-head">
               <Icon name={r.icon} />
-              <span>{r.name}</span>
+              <span>{r.key === "memory_mb" ? "物理内存" : r.name}</span>
               <span className="resource-load">
                 {total ? `${Math.round(clamp(r.load))}% 使用` : "未检测到"}
               </span>
             </div>
             <strong className="resource-capacity">
               {unit(r.key, allocated)}
-              <small>分配额度</small>
+              <small>
+                {r.key === "memory_mb" ? "计算分配额度" : "分配额度"}
+              </small>
             </strong>
             <div className="resource-segments" aria-hidden="true">
               {Array.from({ length: 16 }, (_, i) => (
