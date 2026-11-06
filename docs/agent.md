@@ -141,3 +141,9 @@ min_vram_mb = 4096
 协议依据 [ComfyUI 官方示例](https://github.com/comfyanonymous/ComfyUI/blob/master/script_examples/basic_api_example.py) 与[服务器接口](https://github.com/comfyanonymous/ComfyUI/blob/master/server.py)。上线前需在管理员实际版本、工作流、模型与 GPU 上完成一次生成和卸载验收。
 
 受管推理采用独立的内存预算与物理启动门槛；计算资源配置不再限制推理提交额度。升级必须补齐全部已启用 worker 的门槛，详见[内存配置与升级](managed-memory.md)。
+
+### 图片 seed 请求参数
+
+`POST /api/v1/images/generations` 允许顶层 `seed`：非负整数（0–9007199254740991）直接用于本次任务；传 `null` 或省略时，由管理员维护的模板 `image_parameters.seed` 决定。通用 `/api/v1/jobs` 的图片 input 也支持相同字段。不会因此开放 steps、CFG、上下文、资源等其他参数。
+
+ComfyUI 节点必须已配置指向 `KSampler` 的 `sampler_node`，才可以应用调用方的 seed；没有绑定时显式报错，不会假装生效。真实 ComfyUI 完成结果的 `result.seed` 返回实际使用值；没有采样器绑定时为 null。部署此功能需同步更新服务端和执行图片的 Agent。旧请求（不含 seed）保持原行为。合成图片 Worker 仅用于协议测试，null/省略仍使用原有提示词确定性种子规则。

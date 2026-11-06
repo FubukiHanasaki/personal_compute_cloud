@@ -21,7 +21,9 @@ class Parameters(BaseModel):
     repetition_penalty: float = Field(default=1.0, ge=1, le=2)
     seed: int = Field(default=0, ge=0, le=2**31 - 1)
     thinking: bool = False
-    kv_cache_type: Literal["f16", "q8_0", "q4_0", "bf16", "fp8", "int8", "nvfp4", "k8v4"] = "f16"
+    kv_cache_type: Literal[
+        "f16", "q8_0", "q4_0", "bf16", "fp8", "int8", "nvfp4", "k8v4"
+    ] = "f16"
     kv_capacity_mb: int = Field(default=0, ge=0, le=65536)
     prefix_reuse: bool = True
     flash_attention: bool = True
@@ -182,3 +184,11 @@ def ollama_messages(messages):
                 }
             )
     return result
+
+
+def image_seed(requested, default):
+    """Resolve only the seed; resource/model settings remain administrator-owned."""
+    value = default if requested is None else requested
+    if type(value) is not int or not 0 <= value <= 2**53 - 1:
+        raise ValueError("图片 seed 必须是 0–9007199254740991 的整数或 null")
+    return value

@@ -10,6 +10,7 @@ from pcc_agent.inference import (
     validate_messages,
     IMAGE_SIZES,
     image_bytes,
+    image_seed,
 )
 from .schemas import Resources, Strict
 from .security import admin, audit, current_user, require_scope
@@ -109,7 +110,7 @@ def validate_input(template, data):
             raise HTTPException(422, str(exc)) from exc
     elif template.kind == "ai.image":
         if (
-            set(data) - {"prompt", "size", "images"}
+            set(data) - {"prompt", "size", "images", "seed"}
             or not {"prompt", "size"} <= set(data)
             or not isinstance(data["prompt"], str)
             or not 1 <= len(data["prompt"]) <= 2000
@@ -125,6 +126,7 @@ def validate_input(template, data):
         if not isinstance(images, list) or len(images) > 4:
             raise HTTPException(422, "最多 4 张参考图片")
         try:
+            image_seed(data.get("seed"), 0)
             for image in images:
                 image_bytes(image)
         except (ValueError, TypeError) as exc:
