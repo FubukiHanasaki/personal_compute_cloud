@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from pcc_server.text2visual import Adapter, Config, create_gateway
+from pcc_server.text2visual import Adapter, Config, ModelInfo, create_gateway
 
 
 def png_fixture():
@@ -129,20 +129,20 @@ def gateway(tmp_path):
             return httpx.Response(state["status"], json={"error": "fixture"})
         path = request.url.path
         if path == "/api/v1/models":
-            return httpx.Response(
-                200,
-                json={
-                    "data": [
-                        {"id": "text", "task_type": "ai.chat", "online": True},
-                        {
-                            "id": "image",
-                            "task_type": "ai.image",
-                            "online": True,
-                            "image_parameters": {"seed": 12345},
-                        },
-                    ]
-                },
+            rows = state.get(
+                "models",
+                [
+                    {"id": "text", "task_type": "ai.chat", "online": True},
+                    {
+                        "id": "image",
+                        "task_type": "ai.image",
+                        "online": True,
+                        "image_parameters": {"seed": 12345},
+                    },
+                ],
             )
+            offset = int(request.url.params.get("offset", "0"))
+            return httpx.Response(200, json={"data": rows[offset : offset + 100]})
         if path == "/v1/chat/completions":
             return httpx.Response(
                 200,
@@ -379,7 +379,10 @@ def test_image_seed_passthrough(gateway, seed):
     assert json.loads(submitted.content)["seed"] == seed
 
 
-def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
+@pytest.mark.parametrize("explicit_selection", [False, True])
+def test_gateway_against_actual_pcc_job_and_artifact_routes(
+    env, tmp_path, explicit_selection
+):
     """Real PCC routes/DB/lease/upload; deterministic worker completion, not model inference."""
     import base64
     import uuid
@@ -470,7 +473,7 @@ def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
 
     config = Config(
         text_model="unused",
-        image_model="gateway-image",
+        image_model="unused-default" if explicit_selection else "gateway-image",
         text_info={"name": "Unused"},
         image_info={"name": "Fixture"},
         output_dir=str(tmp_path / "gateway-output"),
@@ -479,7 +482,12 @@ def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
         base_url="http://testserver", transport=httpx.MockTransport(forward)
     ) as upstream:
         result = Adapter(config, "owner-key", upstream).generate_image(
-            {**image_request(), "seed": 777, "negative_prompt": "text, labels, people"}
+            {
+                **image_request(),
+                **({"model": "gateway-image"} if explicit_selection else {}),
+                "seed": 777,
+                "negative_prompt": "text, labels, people",
+            }
         )
     assert result["status"] == "ok", json.dumps(result)
     assert result["image"]["seed"] == 777
@@ -508,3 +516,163 @@ def test_backend_must_confirm_negative_prompt(gateway, confirmation):
     assert result["status"] == "error"
     assert result["error"]["code"] == "UNSUPPORTED_PARAMETER"
     assert result["scene_revision"] == 3
+
+
+@pytest.mark.parametrize("kind", ["text", "image"])
+def test_each_adapter_works_without_other_configuration(gateway, kind):
+    adapter, state = gateway
+    if kind == "text":
+        adapter.config = Config(text_model="text", output_dir=adapter.config.output_dir)
+        result = adapter.plan_storyboard(plan_request())
+        expected = "/v1/chat/completions"
+    else:
+        adapter.config = Config(
+            image_model="image", output_dir=adapter.config.output_dir
+        )
+        result = adapter.generate_image(image_request())
+        expected = "/api/v1/images/generations"
+    assert result["status"] == "ok", result
+    assert [r.url.path for r in state["calls"] if r.method == "POST"] == [expected]
+
+
+def test_request_selection_requires_no_defaults_and_preserves_metadata(gateway):
+    adapter, state = gateway
+    adapter.config.text_model = None
+    adapter.config.image_model = None
+    adapter.config.text_info = None
+    adapter.config.image_info = None
+    adapter.config.model_info = {
+        "image": ModelInfo(name="Image provenance", checkpoint="sha256:trusted")
+    }
+    text = adapter.plan_storyboard({**plan_request(), "model": "text"})
+    assert text["status"] == "ok", text
+    assert text["meta"]["model"]["name"] == "text"
+    image = adapter.generate_image({**image_request(), "model": "image"})
+    assert image["status"] == "ok", image
+    assert image["image"]["model"] == "Image provenance"
+    assert image["meta"]["model"]["checkpoint"] == "sha256:trusted"
+    assert adapter.config.text_model is None and adapter.config.image_model is None
+    assert adapter.generate_image(image_request())["error"]["code"] == "INVALID_INPUT"
+
+
+@pytest.mark.parametrize(
+    "kind,selected",
+    [
+        ("text", "image"),
+        ("image", "text"),
+        ("text", "unknown"),
+        ("image", "unknown"),
+        ("text", "synthetic"),
+        ("image", "ambiguous"),
+    ],
+)
+def test_wrong_kind_unknown_synthetic_and_ambiguous_never_submit(
+    gateway, kind, selected
+):
+    adapter, state = gateway
+    state["models"] = [
+        {"id": "text", "task_type": "ai.chat"},
+        {"id": "image", "task_type": "ai.image"},
+        {"id": "synthetic", "task_type": "ai.chat", "synthetic": True},
+        {"id": "ambiguous", "task_type": "ai.image"},
+        {"id": "ambiguous", "task_type": "ai.image"},
+    ]
+    raw = plan_request() if kind == "text" else image_request()
+    result = adapter.execute(kind, {**raw, "model": selected})
+    assert result["status"] == "error" and result["error"]["code"] == "MODEL_NOT_LOADED"
+    assert not any(r.method == "POST" for r in state["calls"])
+
+
+def test_selected_image_models_have_distinct_idempotency_and_files(gateway):
+    adapter, state = gateway
+    state["models"] = [
+        {"id": "image", "task_type": "ai.image", "name": "First"},
+        {"id": "image2", "task_type": "ai.image", "name": "Second"},
+    ]
+    first = adapter.generate_image(image_request())
+    explicit = adapter.generate_image({**image_request(), "model": "image"})
+    second = adapter.generate_image({**image_request(), "model": "image2"})
+    assert first["status"] == explicit["status"] == second["status"] == "ok"
+    posts = [r for r in state["calls"] if r.method == "POST"]
+    assert [json.loads(r.content)["model"] for r in posts] == [
+        "image",
+        "image",
+        "image2",
+    ]
+    assert posts[0].headers["Idempotency-Key"] == posts[1].headers["Idempotency-Key"]
+    assert posts[0].headers["Idempotency-Key"] != posts[2].headers["Idempotency-Key"]
+    assert (
+        first["image"]["path"] == explicit["image"]["path"] != second["image"]["path"]
+    )
+    assert second["image"]["model"] == second["meta"]["model"]["name"] == "Second"
+    assert adapter.config.image_model == "image"
+
+
+def test_concurrent_text_selection_is_request_local(gateway):
+    from concurrent.futures import ThreadPoolExecutor
+
+    adapter, state = gateway
+    state["models"] = [
+        {"id": "text", "task_type": "ai.chat"},
+        {"id": "text2", "task_type": "ai.chat", "name": "Second text"},
+    ]
+    requests = [{**plan_request(), "model": model} for model in ("text", "text2") * 4]
+    with ThreadPoolExecutor(4) as pool:
+        results = list(pool.map(adapter.plan_storyboard, requests))
+    assert all(r["status"] == "ok" for r in results)
+    assert [r["meta"]["model"]["name"] for r in results] == [
+        "Qwen text",
+        "Second text",
+    ] * 4
+    posts = [r for r in state["calls"] if r.method == "POST"]
+    keys = {}
+    for post in posts:
+        model = json.loads(post.content)["model"]
+        keys.setdefault(model, set()).add(post.headers["Idempotency-Key"])
+    assert len(keys["text"]) == len(keys["text2"]) == 1
+    assert keys["text"] != keys["text2"]
+    assert adapter.config.text_model == "text"
+
+
+def test_http_catalogue_and_selected_describe_do_not_load_models(gateway):
+    adapter, state = gateway
+    state["models"] = [
+        {"id": "text", "task_type": "ai.chat", "online": True},
+        {"id": "image2", "name": "Image Two", "task_type": "ai.image", "online": False},
+        {"id": "synthetic", "task_type": "ai.chat", "synthetic": True},
+    ]
+    token = "test-token-" * 4
+    with TestClient(create_gateway(adapter, token)) as client:
+        headers = {"Authorization": "Bearer " + token}
+        rows = client.get("/v1/models", headers=headers).json()["data"]
+        assert [r["id"] for r in rows] == ["text", "image2"]
+        assert rows[0]["default"] and not rows[1]["default"]
+        result = client.get("/v1/adapters/image?model=image2", headers=headers).json()
+        assert result["model"]["name"] == "Image Two" and result["ready"] is False
+        assert client.get("/v1/models").json()["status"] == "error"
+        result = client.post(
+            "/v1/images:generate",
+            headers=headers,
+            json={**image_request(), "model": "image2"},
+        ).json()
+        assert result["status"] == "ok", result
+    assert len([r for r in state["calls"] if r.method == "POST"]) == 1
+
+
+def test_catalogue_pagination_reaches_selected_model(gateway):
+    adapter, state = gateway
+    state["models"] = [
+        {"id": "text" + str(i), "task_type": "ai.chat"} for i in range(101)
+    ]
+    result = adapter.plan_storyboard({**plan_request(), "model": "text100"})
+    assert result["status"] == "ok", result
+    assert json.loads(state["calls"][-1].content)["model"] == "text100"
+    assert adapter.describe("text", "text100")["model"]["name"] == "text100"
+
+
+@pytest.mark.parametrize("bad", ["", "x" * 101, True, 123, []])
+def test_invalid_model_selector_is_rejected(gateway, bad):
+    adapter, state = gateway
+    result = adapter.generate_image({**image_request(), "model": bad})
+    assert result["error"]["code"] == "INVALID_INPUT"
+    assert not state["calls"]

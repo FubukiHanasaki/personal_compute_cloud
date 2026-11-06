@@ -8,10 +8,27 @@ This branch adds an independent gateway for the original adapter-contracts v0.1.
 
 | HTTP | Python | Behaviour |
 | --- | --- | --- |
-| POST `/v1/storyboards:plan` | `TextAdapter.plan_storyboard(dict)` | Calls the configured PCC text model; validates JSON output against the supplied schema and essential identifier/revision/reference invariants. |
+| POST `/v1/storyboards:plan` | `TextAdapter.plan_storyboard(dict)` | Calls the request-selected PCC text model (or configured default); validates JSON output against the supplied schema and essential identifier/revision/reference invariants. |
 | POST `/v1/images:generate` | `ImageAdapter.generate_image(dict)` | Submits an authorized PCC image task, waits, verifies/downloads the artifact and returns an adapter-local path. |
-| GET `/v1/adapters/text` | `TextAdapter.describe()` | Reports text adapter metadata and model visibility/online state. |
-| GET `/v1/adapters/image` | `ImageAdapter.describe()` | Reports image adapter metadata and limitations. |
+| GET `/v1/adapters/text?model=...` | `TextAdapter.describe(model=None)` | Reports text adapter metadata and model visibility/online state. |
+| GET `/v1/adapters/image?model=...` | `ImageAdapter.describe(model=None)` | Reports image adapter metadata and limitations. |
+
+GET `/v1/models` lists authorized non-synthetic model IDs, kinds, names, online status and defaults. Discovery/describe only read metadata and never load or prewarm models.
+
+### Independent calls and per-request model selection
+
+Both POST request bodies accept an optional top-level `model` containing the exact PCC model ID. For example, add `"model": "pcc-qwen3.5-9b:q5_k_m"` to a planning request, or `"model": "qwen-image-2.1"` / `"model": "sdxl-lightning-4step"` to an image request. All other original request and response fields remain unchanged. Requests go through the existing PCC authorization, resource protection and on-demand scheduling; the gateway never chooses another model automatically.
+
+- A text request only submits text inference. It does not require an image default/configuration, generate images, or load an image model.
+- An image request only submits image inference. It does not require a text default/configuration, call the text model, or plan a storyboard.
+- Omitted/null model uses that kind's configured default. If no default exists, the request must specify model; no first-catalogue or 27B fallback occurs.
+- `text_model`, `image_model`, `text_info`, `image_info` are now optional/null in configuration. Existing paired/default profiles continue to work. You can retain the currently deployed 9B default and select other authorized models per call without restarting or generating profile combinations.
+- Configuring only `text_model` or only `image_model` is supported. The other kind can still be called with an explicitly selected authorized model. Omitting a default does not disable/revoke access to that kind; PCC grants remain the access boundary.
+- `model_info` is an optional administrator metadata map keyed by exact model ID. Overrides apply only after the selected model is authorized. Otherwise a selected default retains its legacy text_info/image_info, or the gateway uses the PCC display name/ID and null provenance. Responses and saved-image metadata reflect the selected model, not another default.
+- Wrong-kind, unauthorized, synthetic or ambiguous model IDs fail before task submission. Offline models can remain queued by PCC; there is no automatic substitution.
+- Idempotency and local output hashes include selected model and kind. Default and explicit selection of the same model share a key; different models never share a key/file, including concurrent calls. Configuration is not mutated per request.
+
+The original four endpoints are retained; the model selector and catalogue are optional extensions. The Python adapters accept the same `model` request field. `describe(model=...)` inspects that selected model without changing the default.
 
 Generation returns HTTP 200 with `status: ok/error`, `request_id`, and `meta`; valid image requests also echo `scene_id` and `scene_revision` on success or failure. Expected input/backend errors are converted to the original error envelope. Describe responses use the original describe shape. Unrecognized routes/methods retain HTTP routing errors. Oversized bodies are rejected with an INVALID_INPUT envelope. Errors before JSON parsing cannot echo unparsed correlation fields.
 
@@ -30,9 +47,9 @@ UV_PROJECT_ENVIRONMENT=tmp/venv UV_CACHE_DIR=tmp/uv-cache uv sync --frozen
 cp deploy/text2visual.example.json tmp/text2visual.json
 ```
 
-Edit `tmp/text2visual.json`: set the exact two authorized model IDs and truthful model metadata. Unknown provenance stays null. The example's model names are placeholders, not a model installation. Output files persist under the configured directory; use durable storage and back it up if scene history must survive deployment cleanup. Do not allow an untrusted account to modify that directory or configuration. The gateway does not automatically purge project images.
+Edit `tmp/text2visual.json`: optionally set a text default, image default, or both, and truthful model metadata. The example leaves both defaults null, requiring model selection in POST bodies. Unknown provenance stays null. Existing deployed configuration files can be retained unchanged. Output files persist under the configured directory; use durable storage and back it up if scene history must survive deployment cleanup. Do not allow an untrusted account to modify that directory or configuration. The gateway does not automatically purge project images.
 
-Provide secrets through environment variables, never URL/query parameters or tracked JSON files. Use a dedicated least-privilege PCC API key with `models:read`, `jobs:write`, `jobs:read` and access to the two templates. The gateway token protects a shared upstream identity: distribute it only to the trusted orchestrator, not directly to untrusted end users. It does not implement per-user authorization within that identity.
+Provide secrets through environment variables, never URL/query parameters or tracked JSON files. Use a dedicated least-privilege PCC API key with `models:read`, `jobs:write`, `jobs:read` and access to the templates you want callers to select. The gateway token protects a shared upstream identity: distribute it only to the trusted orchestrator, not directly to untrusted end users. It does not implement per-user authorization within that identity.
 
 ```bash
 read -rsp 'PCC API key: ' PCC_ADAPTER_API_KEY
@@ -56,9 +73,9 @@ With `PCC_ADAPTER_TOKEN` available to the test shell:
 curl -fsS -H "Authorization: Bearer $PCC_ADAPTER_TOKEN" http://127.0.0.1:8010/v1/adapters/image
 ```
 
-Send the original contract's JSON bodies to the POST endpoints. No PCC-specific fields need to be added by the orchestrator.
+Send the original contract's JSON bodies to the POST endpoints. The original bodies still work when defaults are configured; add model to select a particular backend per request.
 
-Python callers instantiate `TextAdapter(config, api_key)` or `ImageAdapter(config, api_key)` with a `Config` object. Call `adapter.client.close()` when finished. The shared `Adapter` class also provides both generation methods and `describe(kind)`.
+Python callers instantiate `TextAdapter(config, api_key)` or `ImageAdapter(config, api_key)` with a `Config` object. Call `adapter.client.close()` when finished. The shared `Adapter` class also provides both generation methods, `describe(kind, model=None)` and `catalogue()`.
 
 ## Original-contract limitations with current PCC
 
@@ -79,3 +96,10 @@ Run `tmp/venv/bin/python -m pytest tests/test_text2visual.py -q` after installin
 Local verification (2026-11-06): main seed implementation passed 233 tests with 15 environment-specific skips; the combined compatibility branch passed 257 tests with the same 15 skips. A real PCC API/SQLite test exercised submission, lease claim, artifact upload, completion, polling and download with a deterministic worker result. Wheel/sdist checks confirmed the gateway module, unchanged schema asset and CLI entry point are packaged. Existing TestClient emitted one dependency deprecation warning; no background-thread warnings occurred. PostgreSQL restore/HTTPS and native Windows checks were skipped in this run; live model/server acceptance remains pending.
 
 Negative-prompt follow-up (2026-11-06): main `6c704a1` passed 257 tests; the synchronized adapter passed 288 tests, with 15 environment-specific skips in each run. The actual PCC submission/lease/artifact test now sends a nonempty negative prompt and checks completion confirmation; a separate ComfyUI transport test checks the conditioning text in the submitted graph and returned result. Browser verification passed the Agent negative-node configuration save roundtrip and existing UI flows. Updated wheel assets were checked. No target Windows/model inference or production deployment was performed.
+
+
+### Updating an existing trial deployment
+
+Drain/finish in-flight gateway requests before replacing code. Model-aware idempotency keys use a new format; resubmitting an old request after this upgrade can create a new task. Do not replay completed requests merely to verify an upgrade. In the existing detached worktree, fetch `origin codex/text2visual-adapter`, fast-forward to `origin/codex/text2visual-adapter`, install with `UV_PROJECT_ENVIRONMENT=tmp/venv UV_CACHE_DIR=tmp/uv-cache uv sync --frozen`, then restart only `pcc-text2visual` through the existing PM2 home. Preserve tmp/text2visual.json and secrets; a 9B default needs no change. No main-server, Agent, Caddy or database changes are required for model selection. Check GET /v1/models and selected describe first; generate only against the intentionally selected model.
+
+Model-selection verification (2026-11-06): 50 adapter tests passed, including text-only/image-only/default-free configuration, explicit and default selection against real PCC submission/lease/artifact routes with deterministic worker completions, wrong-kind/unknown/synthetic/ambiguous rejection, catalogue pagination, metadata correctness, per-model idempotency/output separation and concurrent text calls. Full SQLite regression passed 307 tests with 15 environment-specific skips. Wheel assets and the default-free example configuration were verified. No production requests, real model inference, or 27B model loading were performed during this update.
