@@ -27,6 +27,7 @@ class ImageRequest(Strict):
     prompt: str = Field(min_length=1, max_length=2000)
     size: str | None = None
     images: list[str] = Field(default_factory=list, max_length=4)
+    seed: int | None = Field(default=None, strict=True, ge=0, le=2**53 - 1)
 
 
 def find_model(db, model, kind, user):
@@ -104,6 +105,7 @@ def generate_image(
                         "default_size", "512x512"
                     ),
                     **({"images": body.images} if body.images else {}),
+                    **({"seed": body.seed} if body.seed is not None else {}),
                 },
                 timeout_seconds=template.config["max_timeout_seconds"],
             ),

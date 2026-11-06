@@ -13,7 +13,7 @@ import httpx
 from .platform import managed_isolation_available
 from .services import OllamaBackend, check_loopback_port
 from .managed_process import environment
-from .inference import IMAGE_SIZES, image_bytes, ImageParameters
+from .inference import IMAGE_SIZES, image_bytes, ImageParameters, image_seed
 
 ALLOWED_NODES = {
     "CheckpointLoaderSimple",
@@ -54,7 +54,7 @@ def approved_workflow(config, model, data, image_parameters=None):
             "Prompt/size bindings must target approved text and latent nodes"
         )
     if (
-        set(data) - {"prompt", "size", "images"}
+        set(data) - {"prompt", "size", "images", "seed"}
         or not {"prompt", "size"} <= set(data)
         or not isinstance(data["size"], str)
         or data["size"] not in IMAGE_SIZES
@@ -73,12 +73,15 @@ def approved_workflow(config, model, data, image_parameters=None):
     graph[approved.latent_node]["inputs"].update(
         width=width, height=height, batch_size=1
     )
+    settings = ImageParameters(**(image_parameters or {}))
+    seed = image_seed(data.get("seed"), settings.seed)
+    if data.get("seed") is not None and not approved.sampler_node:
+        raise RuntimeError("Per-request seed requires an approved KSampler binding")
     if approved.sampler_node:
         if graph.get(approved.sampler_node, {}).get("class_type") != "KSampler":
             raise RuntimeError("Sampler binding must target KSampler")
-        settings = ImageParameters(**(image_parameters or {}))
         graph[approved.sampler_node]["inputs"].update(
-            steps=settings.steps, cfg=settings.cfg, seed=settings.seed
+            steps=settings.steps, cfg=settings.cfg, seed=seed
         )
     images = data.get("images", [])
     if not isinstance(images, list) or len(images) > len(approved.image_nodes):
@@ -232,6 +235,8 @@ class ComfyUIBackend(OllamaBackend):
         self._require_listener(self.config.comfyui_port)
         until = time.monotonic() + max(1, timeout_seconds)
         graph = approved_workflow(self.config, self.model, data, self.image_parameters)
+        sampler_node = self.config.comfyui_workflows[self.model].sampler_node
+        used_seed = graph[sampler_node]["inputs"]["seed"] if sampler_node else None
         input_root = Path(self.staging.name) / "input"
         for index, url in enumerate(data.get("images", [])):
             path = input_root / f"reference-{index}.png"
@@ -297,6 +302,7 @@ class ComfyUIBackend(OllamaBackend):
                                 "model": self.model,
                                 "size": data["size"],
                                 "synthetic": False,
+                                "seed": used_seed,
                             },
                             "artifacts": [
                                 {

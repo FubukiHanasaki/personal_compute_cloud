@@ -51,7 +51,9 @@ def run(task):
         width = int(data["size"].split("x")[0])
         if width not in {256, 512}:
             raise ValueError("Invalid size")
-        seed = zlib.crc32(data["prompt"].encode())
+        seed = data.get("seed")
+        if seed is None:
+            seed = zlib.crc32(data["prompt"].encode())
         raw = b"".join(
             b"\x00"
             + bytes(

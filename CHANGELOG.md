@@ -97,3 +97,9 @@ SQLite/PostgreSQL 各 40 项测试、前端传输 3 项及生产构建通过；�
 SQLite/PostgreSQL 各 38 项测试通过，真实 HTTP/隔离计算闭环与真实 GPU 模型生命周期已验证。前端、Python 包、独立安装入口和部署配置校验通过。
 
 本版本为开发版。Windows 等价执行隔离和实机验收、实际图片模型、真实 Docker HTTPS/恢复演练和浏览器 QA 尚待完成。详见 docs/acceptance.md。
+
+### 图片调用 seed
+
+- 图片生成 API 和通用图片任务支持逐请求 seed（严格整数，0–2^53−1）；null/省略使用管理员配置默认值。
+- ComfyUI 通过已批准 KSampler 绑定应用种子，并在结果返回实际 seed；无绑定时拒绝显式覆盖。
+- 不更改模型、授权、资源或其他管理员参数。
