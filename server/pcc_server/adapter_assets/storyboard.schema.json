@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "text2visual/storyboard/1.0",
+  "title": "Text2Visual storyboard (story plan) v1.0",
+  "description": "The contract between pipeline stages. Produced by text analysis and scene planning (stages 1-3), consumed by image generation (stage 4), the editor (stage 5) and export (stage 6). Validated on write by the API.",
+  "type": "object",
+  "required": ["schema_version", "project_id", "source", "style", "key_points", "scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "required": ["source_id", "type", "language"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "enum": ["paste", "txt", "docx", "pdf"] },
+        "language": { "type": "string", "description": "BCP 47 tag, e.g. en" }
+      }
+    },
+    "style": {
+      "type": "object",
+      "description": "Project-level style shared by every scene (PI2 / NFR2).",
+      "required": ["style_id", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "style_id": { "type": "string" },
+        "description": { "type": "string", "description": "Text appended to or merged into every scene prompt." },
+        "reference_image": { "type": ["string", "null"], "description": "Path to the shared style reference image, if any." }
+      }
+    },
+    "key_points": {
+      "type": "array",
+      "description": "Knowledge points extracted from the source (TP4). A point with no scene referencing it is 'unmapped' (ED8).",
+      "items": { "$ref": "#/$defs/key_point" }
+    },
+    "scenes": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/scene" }
+    }
+  },
+  "$defs": {
+    "source_ref": {
+      "type": "object",
+      "description": "Where in the source this came from (ED3). At least one of page or char range is required.",
+      "additionalProperties": false,
+      "properties": {
+        "page": { "type": ["integer", "null"], "minimum": 1, "description": "1-based page number (PDF/slides)." },
+        "char_start": { "type": ["integer", "null"], "minimum": 0 },
+        "char_end": { "type": ["integer", "null"], "minimum": 0 },
+        "excerpt": { "type": "string", "description": "Short excerpt for display; the offsets are authoritative." }
+      },
+      "anyOf": [
+        { "required": ["page"], "properties": { "page": { "type": "integer" } } },
+        { "required": ["char_start", "char_end"], "properties": { "char_start": { "type": "integer" }, "char_end": { "type": "integer" } } }
+      ]
+    },
+    "key_point": {
+      "type": "object",
+      "required": ["key_point_id", "text", "source_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "key_point_id": { "type": "string", "pattern": "^k[0-9]+$" },
+        "text": { "type": "string", "minLength": 1 },
+        "source_ref": { "$ref": "#/$defs/source_ref" },
+        "excluded": { "type": "boolean", "default": false, "description": "True if the user deliberately excluded it from the storyboard." }
+      }
+    },
+    "image": {
+      "type": "object",
+      "description": "A generated image and the values needed to reproduce it (ED7).",
+      "required": ["path", "model", "resolved_prompt", "seed"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "model": { "type": "string", "description": "Model name and version as reported by the adapter." },
+        "adapter": { "type": "string" },
+        "resolved_prompt": { "type": "string", "description": "The exact prompt sent to the model, after style merging." },
+        "negative_prompt": { "type": "string" },
+        "seed": { "type": "integer" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "latency_ms": { "type": "integer" },
+        "mock": { "type": "boolean", "default": false, "description": "True for placeholder images from a mock adapter." }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "required": ["scene_id", "order", "title", "caption", "visual_description", "image_prompt", "key_point_ids", "source_ref", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "scene_id": { "type": "string", "pattern": "^s[0-9]+$", "description": "Stable ID; never reused, not changed by reordering." },
+        "order": { "type": "integer", "minimum": 1, "description": "Position in the story; changed by reordering (ED4)." },
+        "title": { "type": "string" },
+        "caption": { "type": "string", "description": "Student-facing text shown with the image (ED1)." },
+        "visual_description": { "type": "string", "description": "What the scene should show, in plain language." },
+        "image_prompt": { "type": "string", "description": "Prompt for the image model, before the project style is merged in." },
+        "negative_prompt": { "type": "string" },
+        "key_point_ids": { "type": "array", "items": { "type": "string", "pattern": "^k[0-9]+$" } },
+        "source_ref": { "$ref": "#/$defs/source_ref" },
+        "alt_text": { "type": "string", "description": "Accessibility text (NFR10)." },
+        "status": { "enum": ["planned", "generating", "generated", "edited", "accepted"] },
+        "locked": { "type": "boolean", "default": false, "description": "Excluded from regeneration (ED10)." },
+        "revision": { "type": "integer", "minimum": 1, "description": "Increments on every edit or regeneration. A job result is discarded if this changed while it ran (NFR7)." },
+        "image": { "anyOf": [{ "$ref": "#/$defs/image" }, { "type": "null" }] },
+        "image_history": {
+          "type": "array",
+          "description": "Earlier images kept so previous versions stay retrievable (ED2).",
+          "items": { "$ref": "#/$defs/image" }
+        }
+      }
+    }
+  }
+}

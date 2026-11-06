@@ -1,6 +1,6 @@
 include LICENSE README.md CHANGELOG.md pyproject.toml setup.cfg uv.lock alembic.ini compose.yaml .env.example
 recursive-include agent *.py *.html *.css *.js
-recursive-include server *.py
+recursive-include server *.py *.json
 recursive-include migrations *.py *.mako
 recursive-include tests *.py *.mjs
 recursive-include scripts *.py

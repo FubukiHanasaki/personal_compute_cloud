@@ -1,0 +1,22 @@
+{
+  "upstream": "http://127.0.0.1:8000",
+  "text_model": "REPLACE_WITH_AUTHORIZED_TEXT_MODEL_ID",
+  "image_model": "REPLACE_WITH_AUTHORIZED_IMAGE_MODEL_ID",
+  "text_info": {
+    "name": "REPLACE_WITH_ACTUAL_MODEL_NAME",
+    "version": null,
+    "checkpoint": null,
+    "licence": null,
+    "source_url": null
+  },
+  "image_info": {
+    "name": "Qwen-Image",
+    "version": "2.1",
+    "checkpoint": null,
+    "licence": null,
+    "source_url": null
+  },
+  "output_dir": "tmp/text2visual-output",
+  "wait_seconds": 300,
+  "image_max_bytes": 10485760
+}

@@ -223,3 +223,5 @@ tmp/               本地临时文件与运行数据（Git 忽略）
 - [依赖、许可与升级策略](docs/dependencies.md)
 
 MIT License · Copyright © 2026 FubukiHanasaki
+
+Text2Visual 原版协议兼容层（独立进程、试验分支）：见 [部署与限制](docs/text2visual-adapter.md)。
