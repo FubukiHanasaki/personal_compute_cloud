@@ -212,7 +212,7 @@ class Adapter:
                     "style_reference": False,
                     "seed": True,
                     "per_request_seed": True,
-                    "negative_prompt": False,
+                    "negative_prompt": kind == "image",
                 },
                 "estimated_vram_mb": None,
                 "ready": bool(row.get("online")),
@@ -379,10 +379,10 @@ class Adapter:
         }
 
     def image(self, body, deadline):
-        if body.negative_prompt or body.options:
+        if body.options:
             raise Failure(
                 "UNSUPPORTED_PARAMETER",
-                "Per-request negative_prompt and image options are unsupported",
+                "Nonempty image options are unsupported",
             )
         size = f"{body.width}x{body.height}"
         if size not in IMAGE_SIZES:
@@ -409,6 +409,7 @@ class Adapter:
                 "prompt": body.prompt,
                 "size": size,
                 "seed": body.seed,
+                "negative_prompt": body.negative_prompt,
                 **({"images": images} if images else {}),
             },
         )
@@ -437,6 +438,13 @@ class Adapter:
             raise Failure(
                 "UNSUPPORTED_PARAMETER",
                 "Backend did not confirm the requested image seed; update PCC/Agent and verify KSampler binding",
+                details={"job_id": job_id},
+            )
+        negative = job.get("result", {}).get("negative_prompt")
+        if negative != body.negative_prompt:
+            raise Failure(
+                "UNSUPPORTED_PARAMETER",
+                "Backend did not confirm the negative prompt; update PCC/Agent and verify approved conditioning bindings",
                 details={"job_id": job_id},
             )
         artifacts = self.call("GET", f"/api/v1/jobs/{job_id}/artifacts", deadline)[
@@ -497,7 +505,7 @@ class Adapter:
                 "model": self.config.image_info.name,
                 "adapter": "pcc_text2visual_image 0.1.0",
                 "resolved_prompt": body.prompt,
-                "negative_prompt": "",
+                "negative_prompt": negative,
                 "seed": seed,
                 "width": body.width,
                 "height": body.height,

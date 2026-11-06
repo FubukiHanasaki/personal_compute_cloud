@@ -151,13 +151,22 @@ def gateway(tmp_path):
                 },
             )
         if path == "/api/v1/images/generations":
+            state["negative"] = json.loads(request.content).get("negative_prompt")
             supplied = json.loads(request.content).get("seed")
             state["seed"] = 12345 if supplied is None else supplied
             return httpx.Response(202, json={"job_id": "abc123", "status": "queued"})
         if path == "/api/v1/jobs/abc123":
             return httpx.Response(
                 200,
-                json={"status": state["job_status"], "result": {"seed": state["seed"]}},
+                json={
+                    "status": state["job_status"],
+                    "result": {
+                        "seed": state["seed"],
+                        "negative_prompt": state.get(
+                            "confirm_negative", state["negative"]
+                        ),
+                    },
+                },
             )
         if path.endswith("/artifacts"):
             data = state["png"]
@@ -254,7 +263,8 @@ def test_image_download_and_echo(gateway):
 @pytest.mark.parametrize(
     "field,value,code",
     [
-        ("negative_prompt", "text", "UNSUPPORTED_PARAMETER"),
+        ("negative_prompt", True, "INVALID_INPUT"),
+        ("negative_prompt", "x" * 2001, "INVALID_INPUT"),
         ("width", 100, "INVALID_INPUT"),
         ("scene_revision", True, "INVALID_INPUT"),
         ("options", {"steps": 1}, "UNSUPPORTED_PARAMETER"),
@@ -423,6 +433,7 @@ def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
             assert attempt_response.status_code == 200, attempt_response.text
             attempt = attempt_response.json()
             assert attempt["input"]["seed"] == 777
+            assert attempt["input"]["negative_prompt"] == "text, labels, people"
             jid = attempt["job_id"]
             uploaded = pcc.post(
                 f"/internal/v1/jobs/{jid}/artifacts",
@@ -440,7 +451,11 @@ def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
                 headers=node_auth,
                 json={
                     **lease(attempt),
-                    "result": {"seed": 777, "synthetic": False},
+                    "result": {
+                        "seed": 777,
+                        "synthetic": False,
+                        "negative_prompt": "text, labels, people",
+                    },
                     "artifact_ids": [uploaded.json()["artifact_id"]],
                 },
             )
@@ -464,7 +479,32 @@ def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
         base_url="http://testserver", transport=httpx.MockTransport(forward)
     ) as upstream:
         result = Adapter(config, "owner-key", upstream).generate_image(
-            {**image_request(), "seed": 777}
+            {**image_request(), "seed": 777, "negative_prompt": "text, labels, people"}
         )
     assert result["status"] == "ok", json.dumps(result)
     assert result["image"]["seed"] == 777
+
+
+@pytest.mark.parametrize(
+    "negative", ["", "text, labels, people", "模糊、水印", "x" * 2000]
+)
+def test_negative_prompt_passthrough_and_return(gateway, negative):
+    adapter, state = gateway
+    result = adapter.generate_image({**image_request(), "negative_prompt": negative})
+    assert result["status"] == "ok", result
+    assert result["image"]["negative_prompt"] == negative
+    posted = next(r for r in state["calls"] if r.method == "POST")
+    assert json.loads(posted.content)["negative_prompt"] == negative
+    assert adapter.describe("image")["capabilities"]["negative_prompt"] is True
+
+
+@pytest.mark.parametrize("confirmation", [None, "wrong text"])
+def test_backend_must_confirm_negative_prompt(gateway, confirmation):
+    adapter, state = gateway
+    state["confirm_negative"] = confirmation
+    result = adapter.generate_image(
+        {**image_request(), "negative_prompt": "text, labels"}
+    )
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "UNSUPPORTED_PARAMETER"
+    assert result["scene_revision"] == 3
