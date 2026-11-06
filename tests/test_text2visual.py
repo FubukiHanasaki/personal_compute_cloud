@@ -147,7 +147,16 @@ def gateway(tmp_path):
             return httpx.Response(
                 200,
                 json={
-                    "choices": [{"message": {"content": json.dumps(state["board"])}}]
+                    "id": "chatcmpl-" + "f" * 32,
+                    "choices": [
+                        {
+                            "message": {
+                                "content": state.get(
+                                    "content", json.dumps(state["board"])
+                                )
+                            }
+                        }
+                    ],
                 },
             )
         if path == "/api/v1/images/generations":
@@ -676,3 +685,95 @@ def test_invalid_model_selector_is_rejected(gateway, bad):
     result = adapter.generate_image({**image_request(), "model": bad})
     assert result["error"]["code"] == "INVALID_INPUT"
     assert not state["calls"]
+
+
+def test_recorded_schema_echo_is_rejected_with_job_correlation(gateway):
+    adapter, state = gateway
+    state["board"] = adapter.schema
+    result = adapter.plan_storyboard(plan_request())
+    assert result["status"] == "error"
+    assert "storyboard" not in result
+    assert result["error"]["code"] == "SCHEMA_VALIDATION_FAILED"
+    assert result["error"]["details"] == {"reason": "schema_echo", "job_id": "f" * 32}
+    assert result["error"]["retryable"] is True
+
+
+def test_generation_prompt_separates_constraints_from_instance_task(gateway):
+    from pcc_server.text2visual import Plan
+    from jsonschema import Draft202012Validator
+
+    adapter, state = gateway
+    before = json.dumps(adapter.schema, sort_keys=True)
+    result = adapter.plan_storyboard(plan_request())
+    assert result["status"] == "ok", result
+    post = next(r for r in state["calls"] if r.method == "POST")
+    system, user = json.loads(post.content)["messages"]
+    assert "Do NOT copy or return the validation schema" in system["content"]
+    assert "not a JSON Schema author" in system["content"]
+    assert "OUTPUT_HEADER" in user["content"] and "SOURCE_REQUEST" in user["content"]
+    assert "Water evaporates." in user["content"]
+    assert '"$defs"' not in user["content"]
+    assert '"schema_version": "1.0"' in user["content"]
+    schema = json.loads(system["content"].rsplit("\n", 1)[1])
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate(storyboard())
+    scene = schema["$defs"]["scene"]
+    assert {"image", "revision"} <= set(scene["required"])
+    assert scene["properties"]["image"] == {"type": "null"}
+    assert scene["properties"]["status"] == {"const": "planned"}
+    assert "description" in schema["properties"]["style"]["properties"]
+    assert "title" in scene["properties"]
+    body = Plan.model_validate(plan_request())
+    body.options.min_scenes = body.options.max_scenes = 4
+    narrow = json.loads(
+        adapter.planning_messages(body)[0]["content"].rsplit("\n", 1)[1]
+    )
+    assert narrow["properties"]["scenes"]["maxItems"] == 4
+    assert json.dumps(adapter.schema, sort_keys=True) == before
+
+
+@pytest.mark.parametrize("wrapper", ["json", "JSON", ""])
+def test_single_json_fence_is_only_format_normalization(gateway, wrapper):
+    adapter, state = gateway
+    expected = storyboard()
+    state["content"] = "```" + wrapper + "\n" + json.dumps(expected) + "\n```"
+    result = adapter.plan_storyboard(plan_request())
+    assert result["status"] == "ok", result
+    assert result["storyboard"] == expected
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not JSON",
+        "Explanation before JSON {}",
+        "{} {}",
+        "```json\n{}\n``` trailing text",
+        None,
+    ],
+)
+def test_malformed_content_reports_reason_without_raw_text(gateway, content):
+    adapter, state = gateway
+    state["content"] = content
+    result = adapter.plan_storyboard(plan_request())
+    assert result["error"]["code"] == "SCHEMA_VALIDATION_FAILED"
+    assert result["error"]["details"]["reason"] in {"invalid_json", "missing_content"}
+    assert result["error"]["details"]["job_id"] == "f" * 32
+    assert "not JSON" not in json.dumps(result["error"]["details"])
+
+
+def test_schema_and_semantic_errors_report_bounded_details(gateway):
+    adapter, state = gateway
+    state["board"]["scenes"][0]["order"] = "wrong"
+    result = adapter.plan_storyboard(plan_request())
+    details = result["error"]["details"]
+    assert details["reason"] == "schema_mismatch"
+    assert {"path": "/scenes/0/order", "rule": "type"} in details["issues"]
+    assert len(details["issues"]) <= 8
+    assert "wrong" not in json.dumps(details)
+    state["board"] = storyboard()
+    state["board"]["scenes"][0]["revision"] = 9
+    assert (
+        adapter.plan_storyboard(plan_request())["error"]["details"]["reason"]
+        == "scene_initial_state_or_references"
+    )
