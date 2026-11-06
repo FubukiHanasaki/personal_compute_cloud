@@ -3,12 +3,31 @@
 import hashlib
 import json
 import time
+import struct
+import zlib
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from pcc_server.text2visual import Adapter, Config, create_gateway
+
+
+def png_fixture():
+    def chunk(kind, data):
+        return (
+            struct.pack(">I", len(data))
+            + kind
+            + data
+            + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 1024, 1024, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress((b"\x00" + b"\xff" * 3072) * 1024))
+        + chunk(b"IEND", b"")
+    )
 
 
 def plan_request():
@@ -98,7 +117,8 @@ def gateway(tmp_path):
         "board": storyboard(),
         "job_status": "completed",
         "calls": [],
-        "png": b"\x89PNG\r\n\x1a\ncontract-fixture",
+        "png": png_fixture(),
+        "seed": 12345,
         "corrupt": False,
         "status": 200,
     }
@@ -131,9 +151,14 @@ def gateway(tmp_path):
                 },
             )
         if path == "/api/v1/images/generations":
+            supplied = json.loads(request.content).get("seed")
+            state["seed"] = 12345 if supplied is None else supplied
             return httpx.Response(202, json={"job_id": "abc123", "status": "queued"})
         if path == "/api/v1/jobs/abc123":
-            return httpx.Response(200, json={"status": state["job_status"]})
+            return httpx.Response(
+                200,
+                json={"status": state["job_status"], "result": {"seed": state["seed"]}},
+            )
         if path.endswith("/artifacts"):
             data = state["png"]
             return httpx.Response(
@@ -230,7 +255,6 @@ def test_image_download_and_echo(gateway):
     "field,value,code",
     [
         ("negative_prompt", "text", "UNSUPPORTED_PARAMETER"),
-        ("seed", 999, "UNSUPPORTED_PARAMETER"),
         ("width", 100, "INVALID_INPUT"),
         ("scene_revision", True, "INVALID_INPUT"),
         ("options", {"steps": 1}, "UNSUPPORTED_PARAMETER"),
@@ -275,7 +299,7 @@ def test_timeout_does_not_claim_failure_or_retry(gateway, monkeypatch):
 def test_upstream_error_and_describe(gateway):
     adapter, state = gateway
     assert adapter.describe("image")["ready"] is True
-    assert adapter.describe("image")["capabilities"]["per_request_seed"] is False
+    assert adapter.describe("image")["capabilities"]["per_request_seed"] is True
     state["status"] = 403
     result = adapter.plan_storyboard(plan_request())
     assert result["status"] == "error"
@@ -305,6 +329,15 @@ def test_http_contract_auth_malformed_and_methods(gateway):
             response.status_code == 200
             and response.json()["error"]["code"] == "INVALID_INPUT"
         )
+        oversized = client.post(
+            "/v1/images:generate",
+            headers={**headers, "Content-Length": str(13 * 1024 * 1024)},
+            content="{}",
+        )
+        assert (
+            oversized.status_code == 200
+            and oversized.json()["error"]["code"] == "INVALID_INPUT"
+        )
         assert client.get("/v1/adapters/text", headers=headers).json()["kind"] == "text"
         assert (
             client.get("/v1/adapters/image", headers=headers).json()["kind"] == "image"
@@ -322,3 +355,116 @@ def test_configuration_rejects_remote_http_and_weak_auth(gateway):
         Adapter(config, "key")
     with pytest.raises(ValueError):
         create_gateway(adapter, "")
+
+
+@pytest.mark.parametrize("seed", [None, 0, 999, 2**53 - 1])
+def test_image_seed_passthrough(gateway, seed):
+    adapter, state = gateway
+    request = image_request()
+    request["seed"] = seed
+    result = adapter.generate_image(request)
+    assert result["status"] == "ok", json.dumps(result)
+    assert result["image"]["seed"] == (12345 if seed is None else seed)
+    submitted = next(r for r in state["calls"] if r.method == "POST")
+    assert json.loads(submitted.content)["seed"] == seed
+
+
+def test_gateway_against_actual_pcc_job_and_artifact_routes(env, tmp_path):
+    """Real PCC routes/DB/lease/upload; deterministic worker completion, not model inference."""
+    import base64
+    import uuid
+    from conftest import register_node
+    from test_jobs import claim, lease
+
+    _, pcc, auth, _ = env
+    response = pcc.post(
+        "/api/v1/admin/templates",
+        headers=auth,
+        json={
+            "id": "gateway-image",
+            "name": "Image",
+            "kind": "ai.image",
+            "worker": "comfyui:gateway-image",
+            "model": "gateway-image",
+            "image_parameters": {"seed": 42},
+        },
+    )
+    assert response.status_code == 201, response.text
+    _, node_auth, _ = register_node(pcc, auth, workers=["comfyui:gateway-image"])
+    png = png_fixture()
+
+    def forward(request):
+        headers = {
+            **auth,
+            "Content-Type": request.headers.get("Content-Type", "application/json"),
+            **(
+                {"Idempotency-Key": request.headers["Idempotency-Key"]}
+                if "Idempotency-Key" in request.headers
+                else {}
+            ),
+        }
+        result = pcc.request(
+            request.method,
+            str(request.url.copy_with(scheme="http", host="testserver")),
+            content=request.content,
+            headers=headers,
+        )
+        assert result.status_code < 400, (
+            str(request.url),
+            result.text,
+            request.content,
+        )
+        if (
+            request.method == "POST"
+            and request.url.path.endswith("/generations")
+            and result.status_code == 202
+        ):
+            attempt_response = claim(pcc, node_auth, uuid.uuid4().hex)
+            assert attempt_response.status_code == 200, attempt_response.text
+            attempt = attempt_response.json()
+            assert attempt["input"]["seed"] == 777
+            jid = attempt["job_id"]
+            uploaded = pcc.post(
+                f"/internal/v1/jobs/{jid}/artifacts",
+                headers=node_auth,
+                json={
+                    **lease(attempt),
+                    "name": "image.png",
+                    "data_base64": base64.b64encode(png).decode(),
+                    "sha256": hashlib.sha256(png).hexdigest(),
+                },
+            )
+            assert uploaded.status_code == 201, uploaded.text
+            completed = pcc.post(
+                f"/internal/v1/jobs/{jid}/complete",
+                headers=node_auth,
+                json={
+                    **lease(attempt),
+                    "result": {"seed": 777, "synthetic": False},
+                    "artifact_ids": [uploaded.json()["artifact_id"]],
+                },
+            )
+            assert completed.status_code == 200, completed.text
+        return httpx.Response(
+            result.status_code,
+            content=result.content,
+            headers={
+                "Content-Type": result.headers.get("Content-Type", "application/json")
+            },
+        )
+
+    config = Config(
+        text_model="unused",
+        image_model="gateway-image",
+        text_info={"name": "Unused"},
+        image_info={"name": "Fixture"},
+        output_dir=str(tmp_path / "gateway-output"),
+    )
+    with httpx.Client(
+        base_url="http://testserver", transport=httpx.MockTransport(forward)
+    ) as upstream:
+        result = Adapter(config, "owner-key", upstream).generate_image(
+            {**image_request(), "seed": 777}
+        )
+    assert result["status"] == "ok", json.dumps(result)
+    assert result["image"]["seed"] == 777

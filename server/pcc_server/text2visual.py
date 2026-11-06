@@ -4,9 +4,11 @@ import argparse
 import hashlib
 import hmac
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
+import struct
 import time
 from datetime import datetime, timezone
 from typing import Literal
@@ -208,8 +210,8 @@ class Adapter:
                     "max_height": 1536 if kind == "image" else None,
                     "sizes": sorted(IMAGE_SIZES) if kind == "image" else [],
                     "style_reference": False,
-                    "seed": kind == "text",
-                    "per_request_seed": kind == "text",
+                    "seed": True,
+                    "per_request_seed": True,
                     "negative_prompt": False,
                 },
                 "estimated_vram_mb": None,
@@ -262,6 +264,7 @@ class Adapter:
         except httpx.HTTPError:
             failure = Failure("INTERNAL", "PCC connection failed")
         except Exception:
+            logging.getLogger("pcc.text2visual").exception("Adapter processing failed")
             failure = Failure("INTERNAL", "Adapter processing failed")
         return {
             **echo,
@@ -384,14 +387,7 @@ class Adapter:
         size = f"{body.width}x{body.height}"
         if size not in IMAGE_SIZES:
             raise Failure("INVALID_INPUT", "Unsupported image dimensions")
-        row = self.model("image", deadline)
-        # Existing PCC uses the administrator's seed. Never pretend to apply another.
-        seed = row.get("image_parameters", {}).get("seed")
-        if seed is None or (body.seed is not None and body.seed != seed):
-            raise Failure(
-                "UNSUPPORTED_PARAMETER",
-                "Only the administrator-configured image seed is supported",
-            )
+        self.model("image", deadline)
         images = []
         if body.style_reference_image:
             try:
@@ -412,6 +408,7 @@ class Adapter:
                 "model": self.config.image_model,
                 "prompt": body.prompt,
                 "size": size,
+                "seed": body.seed,
                 **({"images": images} if images else {}),
             },
         )
@@ -431,6 +428,17 @@ class Adapter:
                 )
             time.sleep(min(0.2, max(0, deadline - time.monotonic())))
             job = self.call("GET", "/api/v1/jobs/" + job_id, deadline)
+        seed = job.get("result", {}).get("seed")
+        if (
+            type(seed) is not int
+            or not 0 <= seed <= 2**53 - 1
+            or (body.seed is not None and seed != body.seed)
+        ):
+            raise Failure(
+                "UNSUPPORTED_PARAMETER",
+                "Backend did not confirm the requested image seed; update PCC/Agent and verify KSampler binding",
+                details={"job_id": job_id},
+            )
         artifacts = self.call("GET", f"/api/v1/jobs/{job_id}/artifacts", deadline)[
             "items"
         ]
@@ -464,6 +472,14 @@ class Adapter:
             or not data.startswith(b"\x89PNG\r\n\x1a\n")
         ):
             raise Failure("GENERATION_FAILED", "Artifact integrity check failed")
+        if (
+            len(data) < 33
+            or data[12:16] != b"IHDR"
+            or struct.unpack(">II", data[16:24]) != (body.width, body.height)
+        ):
+            raise Failure(
+                "GENERATION_FAILED", "Artifact dimensions do not match the request"
+            )
         root = Path(self.config.output_dir).resolve()
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
         path = root / (key + ".png")
