@@ -11,6 +11,7 @@ from pcc_agent.inference import (
     IMAGE_SIZES,
     image_bytes,
     image_seed,
+    validate_negative_prompt,
 )
 from .schemas import Resources, Strict
 from .security import admin, audit, current_user, require_scope
@@ -110,7 +111,7 @@ def validate_input(template, data):
             raise HTTPException(422, str(exc)) from exc
     elif template.kind == "ai.image":
         if (
-            set(data) - {"prompt", "size", "images", "seed"}
+            set(data) - {"prompt", "size", "images", "seed", "negative_prompt"}
             or not {"prompt", "size"} <= set(data)
             or not isinstance(data["prompt"], str)
             or not 1 <= len(data["prompt"]) <= 2000
@@ -119,13 +120,18 @@ def validate_input(template, data):
         ):
             raise HTTPException(422, "图片参数无效")
         if getattr(template, "worker", "") == "synthetic.image" and (
-            data["size"] not in {"256x256", "512x512"} or data.get("images")
+            data["size"] not in {"256x256", "512x512"}
+            or data.get("images")
+            or data.get("negative_prompt")
         ):
-            raise HTTPException(422, "协议测试图片仅支持 256 / 512 方图，不支持参考图")
+            raise HTTPException(
+                422, "协议测试图片仅支持 256 / 512 方图，不支持参考图或非空负向提示词"
+            )
         images = data.get("images", [])
         if not isinstance(images, list) or len(images) > 4:
             raise HTTPException(422, "最多 4 张参考图片")
         try:
+            validate_negative_prompt(data.get("negative_prompt"))
             image_seed(data.get("seed"), 0)
             for image in images:
                 image_bytes(image)

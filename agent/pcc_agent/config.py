@@ -19,6 +19,7 @@ class ComfyWorkflow(BaseModel):
     latent_node: str
     min_vram_mb: int = Field(default=1024, ge=0)
     sampler_node: str = ""
+    negative_prompt_node: str = ""
     image_nodes: list[str] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")

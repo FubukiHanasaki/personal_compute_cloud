@@ -13,7 +13,13 @@ import httpx
 from .platform import managed_isolation_available
 from .services import OllamaBackend, check_loopback_port
 from .managed_process import environment
-from .inference import IMAGE_SIZES, image_bytes, ImageParameters, image_seed
+from .inference import (
+    IMAGE_SIZES,
+    image_bytes,
+    ImageParameters,
+    image_seed,
+    validate_negative_prompt,
+)
 
 ALLOWED_NODES = {
     "CheckpointLoaderSimple",
@@ -29,6 +35,38 @@ ALLOWED_NODES = {
     "QwenImage21Cache",
     "LoadImage",
 }
+
+
+def bind_negative_prompt(graph, approved, value):
+    """Only mutate a locally approved conditioning input connected to KSampler."""
+    validate_negative_prompt(value)
+    if value is None:
+        return
+    node_id = approved.negative_prompt_node
+    if (
+        not node_id
+        and graph[approved.prompt_node]["class_type"] == "TextEncodeQwenImage21"
+    ):
+        node_id = approved.prompt_node
+    node = graph.get(node_id, {})
+    kind = node.get("class_type")
+    if kind not in {"CLIPTextEncode", "TextEncodeQwenImage21"}:
+        raise RuntimeError("Negative prompt requires an approved text node binding")
+    if kind == "CLIPTextEncode" and node_id == approved.prompt_node:
+        raise RuntimeError("Positive and negative CLIP text nodes must be distinct")
+    sampler = graph.get(approved.sampler_node, {})
+    port = 1 if kind == "TextEncodeQwenImage21" else 0
+    if (
+        sampler.get("class_type") != "KSampler"
+        or sampler["inputs"].get("negative") != [node_id, port]
+        or sampler["inputs"].get("positive") != [approved.prompt_node, 0]
+    ):
+        raise RuntimeError(
+            "Negative prompt binding must feed the approved KSampler negative input"
+        )
+    node["inputs"]["negative_prompt" if kind == "TextEncodeQwenImage21" else "text"] = (
+        value
+    )
 
 
 def approved_workflow(config, model, data, image_parameters=None):
@@ -54,7 +92,7 @@ def approved_workflow(config, model, data, image_parameters=None):
             "Prompt/size bindings must target approved text and latent nodes"
         )
     if (
-        set(data) - {"prompt", "size", "images", "seed"}
+        set(data) - {"prompt", "size", "images", "seed", "negative_prompt"}
         or not {"prompt", "size"} <= set(data)
         or not isinstance(data["size"], str)
         or data["size"] not in IMAGE_SIZES
@@ -69,6 +107,7 @@ def approved_workflow(config, model, data, image_parameters=None):
         else "text"
     )
     graph[approved.prompt_node]["inputs"][text_key] = data["prompt"]
+    bind_negative_prompt(graph, approved, data.get("negative_prompt"))
     width, height = map(int, data["size"].split("x"))
     graph[approved.latent_node]["inputs"].update(
         width=width, height=height, batch_size=1
@@ -303,6 +342,7 @@ class ComfyUIBackend(OllamaBackend):
                                 "size": data["size"],
                                 "synthetic": False,
                                 "seed": used_seed,
+                                "negative_prompt": data.get("negative_prompt"),
                             },
                             "artifacts": [
                                 {

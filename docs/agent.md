@@ -130,6 +130,8 @@ comfyui_gpu_device = ""
 [comfyui_workflows.my-image-model]
 file = "approved-image-workflow.json"
 prompt_node = "6"
+negative_prompt_node = "7"
+sampler_node = "3"
 latent_node = "5"
 min_vram_mb = 4096
 ```
@@ -147,3 +149,12 @@ min_vram_mb = 4096
 `POST /api/v1/images/generations` 允许顶层 `seed`：非负整数（0–9007199254740991）直接用于本次任务；传 `null` 或省略时，由管理员维护的模板 `image_parameters.seed` 决定。通用 `/api/v1/jobs` 的图片 input 也支持相同字段。不会因此开放 steps、CFG、上下文、资源等其他参数。
 
 ComfyUI 节点必须已配置指向 `KSampler` 的 `sampler_node`，才可以应用调用方的 seed；没有绑定时显式报错，不会假装生效。真实 ComfyUI 完成结果的 `result.seed` 返回实际使用值；没有采样器绑定时为 null。部署此功能需同步更新服务端和执行图片的 Agent。旧请求（不含 seed）保持原行为。合成图片 Worker 仅用于协议测试，null/省略仍使用原有提示词确定性种子规则。
+
+
+### 图片负向提示词
+
+图片生成 API 顶层及通用图片任务 input 支持 `negative_prompt`，为最多 2000 字符的字符串。null/省略保留管理员批准工作流的原有负向文本；显式空字符串清空负向文本；非空文本仅作用于本次任务，不修改模板、磁盘工作流、资源或授权。
+
+普通 SD 工作流需在 Agent 配置中设置 `negative_prompt_node = "7"`、`sampler_node = "3"`（以实际节点 ID 为准）。运行时校验该负向编码节点接入采样器的 negative 输入，正向节点接入 positive 输入；不能将同一个 CLIPTextEncode 当成正负两路使用。Qwen-Image 2.1 的 TextEncodeQwenImage21 同时提供正负条件，可复用 prompt_node，向其 negative_prompt 输入赋值，并确认 KSampler 使用该节点的第 1 号负向输出。仍需配置 sampler_node。Agent GUI 已提供可选负向节点配置。
+
+缺少绑定、节点类型不符或连线不符会明确拒绝显式覆盖，不能静默忽略。旧请求不传该字段时仍按原工作流运行。完成结果 result.negative_prompt 回传本次应用文本；未请求覆盖时为 null，表示没有在本次请求中确认该值。部署时同时更新服务端及图片 Agent。模型/采样配置本身决定负向条件的实际效果，本功能不保证特定模型或 CFG 下的画面变化。

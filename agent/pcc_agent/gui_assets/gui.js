@@ -111,7 +111,11 @@ function input(label, value, key, type = "text", min) {
   element.type = type;
   element.value = value;
   element.dataset.key = key;
-  element.required = !["sampler_node", "image_nodes"].includes(key);
+  element.required = ![
+    "sampler_node",
+    "image_nodes",
+    "negative_prompt_node",
+  ].includes(key);
   if (min !== undefined) element.min = min;
   wrapper.append(element);
   return wrapper;
@@ -136,6 +140,11 @@ function addWorkflow(name = "", values = {}) {
     input("工作流 ID", name, "id"),
     input("API 工作流 JSON 文件", values.file || "", "file"),
     input("正向提示词节点", values.prompt_node || "6", "prompt_node"),
+    input(
+      "负向提示词节点（可选）",
+      values.negative_prompt_node || "",
+      "negative_prompt_node",
+    ),
     input("图像尺寸节点", values.latent_node || "5", "latent_node"),
     input("采样节点（可选）", values.sampler_node || "", "sampler_node"),
     input(

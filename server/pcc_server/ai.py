@@ -28,6 +28,7 @@ class ImageRequest(Strict):
     size: str | None = None
     images: list[str] = Field(default_factory=list, max_length=4)
     seed: int | None = Field(default=None, strict=True, ge=0, le=2**53 - 1)
+    negative_prompt: str | None = Field(default=None, strict=True, max_length=2000)
 
 
 def find_model(db, model, kind, user):
@@ -106,6 +107,11 @@ def generate_image(
                     ),
                     **({"images": body.images} if body.images else {}),
                     **({"seed": body.seed} if body.seed is not None else {}),
+                    **(
+                        {"negative_prompt": body.negative_prompt}
+                        if body.negative_prompt is not None
+                        else {}
+                    ),
                 },
                 timeout_seconds=template.config["max_timeout_seconds"],
             ),

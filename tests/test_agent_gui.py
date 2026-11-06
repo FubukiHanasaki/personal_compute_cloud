@@ -22,6 +22,8 @@ def test_config_roundtrip_and_conflict_preserve_all_settings(tmp_path):
             "rabbit.image": {
                 "file": "tmp/工作流.json",
                 "prompt_node": "6",
+                "negative_prompt_node": "7",
+                "sampler_node": "3",
                 "latent_node": "5",
                 "min_vram_mb": 1024,
             }
@@ -31,6 +33,7 @@ def test_config_roundtrip_and_conflict_preserve_all_settings(tmp_path):
     actual = AgentConfig.load(store.path)
     assert actual.name == '节点 "A"'
     assert actual.comfyui_workflows["rabbit.image"].file == tmp_path / "tmp/工作流.json"
+    assert actual.comfyui_workflows["rabbit.image"].negative_prompt_node == "7"
     assert saved["revision"] != state["revision"]
     with pytest.raises(GUIError, match="其他窗口"):
         store.save({key: state[key] for key in ("config", "revision")})
