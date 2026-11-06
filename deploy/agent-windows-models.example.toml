@@ -29,6 +29,8 @@ comfyui_gpu_device = ""
 [comfyui_workflows.local-image]
 file = 'C:\PCC\deploy\workflows\sd15-api.example.json'
 prompt_node = "6"
+negative_prompt_node = "7"
+sampler_node = "3"
 latent_node = "5"
 min_vram_mb = 4096
 

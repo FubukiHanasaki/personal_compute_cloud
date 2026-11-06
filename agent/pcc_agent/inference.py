@@ -192,3 +192,9 @@ def image_seed(requested, default):
     if type(value) is not int or not 0 <= value <= 2**53 - 1:
         raise ValueError("图片 seed 必须是 0–9007199254740991 的整数或 null")
     return value
+
+
+def validate_negative_prompt(value):
+    if value is not None and (not isinstance(value, str) or len(value) > 2000):
+        raise ValueError("负向提示词必须是最多 2000 字符的字符串或 null")
+    return value

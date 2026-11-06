@@ -574,9 +574,16 @@ try {
   await page
     .getByLabel("API 工作流 JSON 文件", { exact: true })
     .fill("tmp/approved-workflow.json");
+  await page.getByLabel("负向提示词节点（可选）", { exact: true }).fill("7");
+  await page.getByLabel("采样节点（可选）", { exact: true }).fill("3");
   await page.getByRole("button", { name: "保存配置", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "配置已保存" }).waitFor();
   assert((await readFile(root + "/agent.toml", "utf8")).includes("qa-image"));
+  assert(
+    (await readFile(root + "/agent.toml", "utf8")).includes(
+      '"negative_prompt_node" = "7"',
+    ),
+  );
   checks.push("Agent config save + workflow editor roundtrip");
   await page.getByRole("button", { name: "添加图片工作流" }).click();
   await page.getByLabel("工作流 ID", { exact: true }).last().fill("qa-image");
