@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     trusted_proxies: str = "127.0.0.1"
     session_hours: int = Field(default=12, ge=1, le=168)
     chat_wait_seconds: int = Field(default=120, ge=1, le=3600)
+    image_wait_seconds: int = Field(default=300, ge=1, le=3600)
 
     @model_validator(mode="after")
     def validate_security(self):

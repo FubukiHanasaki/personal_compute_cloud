@@ -40,7 +40,7 @@ Owner 通过 `/api/v1/admin/users` 创建 User/Admin，通过 PUT 更新 status 
 
 ## Chat 与图片
 
-`GET /api/v1/models` 返回已授权模型、任务类型、synthetic 标记与在线能力。该查询不加载模型。
+`GET /v1/models` 与 `GET /api/v1/models` 返回相同的已授权模型列表（`object: "list"`、`data`），支持 `kind=text|image`、limit、offset；每项包括 id、kind、task_type、管理员默认参数、synthetic 与 online。该查询不加载模型；online 只表示在线节点声明对应 worker，不保证任务立即执行。每次请求通过 `model` 选择模型，文本和图片可独立调用。模型 ID 在同一任务类型的已授权模板中必须唯一，否则调用返回 409，请管理员消除歧义。
 
 ```bash
 curl "$PCC_URL/v1/chat/completions" -H "Authorization: Bearer $PCC_API_KEY" \
@@ -48,9 +48,33 @@ curl "$PCC_URL/v1/chat/completions" -H "Authorization: Bearer $PCC_API_KEY" \
   -d '{"model":"YOUR_REGISTERED_MODEL","messages":[{"role":"user","content":"解释二分查找"}],"stream":true}'
 ```
 
-支持 model、messages、stream、parameters；messages 支持 system/user/assistant + 字符串 content，已启用视觉的模型可在 user content 中传 text / image_url 数组，图片仅支持内嵌 PNG/JPEG/WebP data URI。parameters 可传 temperature、top_p、top_k、max_tokens、seed、thinking；不传时使用管理员默认值。max_tokens 不得超过管理员上限，上下文、KV、视觉设置由管理员维护。tools 和顶层 temperature / max_tokens 等未支持字段明确返回 422。SSE 事件为 `data: {...}`，以 `[DONE]` 结束；等待阶段仍执行持久化任务。首版完成推理后分块 SSE，不声称原生 token streaming。
+支持 model、messages、stream、parameters；messages 支持 system/user/assistant + 字符串 content，已启用视觉的模型可在 user content 中传 text / image_url 数组，图片仅支持内嵌 PNG/JPEG/WebP data URI。parameters 可传 temperature、top_p、top_k、max_tokens、seed、thinking；不传时使用管理员默认值。max_tokens 不得超过管理员上限，上下文、KV、视觉设置由管理员维护。也可直接在顶层传 temperature、top_p、top_k、max_tokens（或同义 max_completion_tokens）、seed、thinking；与 parameters 中的同名值冲突返回 422。tools、response_format 等未实现的字段明确返回 422。SSE 事件为 `data: {...}`，以 `[DONE]` 结束；等待阶段仍执行持久化任务。首版完成推理后分块 SSE，不声称原生 token streaming。
 
 `POST /api/v1/images/generations` 输入 model、prompt、可选 size（256 / 512 / 768 / 1024 方图、1536x1024、1024x1536）及可选 images（最多四个内嵌图片 data URI），size 默认使用管理员配置，返回异步 Job，按任务 API 查询/下载。可选 comfyui:<model> 连接本地批准的真实图片工作流；synthetic.image 只验证协议。历史 Linux 真实权重验证与当前 Windows 待验收范围见[验收矩阵](acceptance.md)及[模型复查记录](windows-models-review.md)。
+
+### 原生同步图片接口
+
+`POST /v1/images/generations` 等待任务完成，返回图片 URL 或 Base64；无需独立兼容层进程、额外兼容层令牌或业务 Schema。使用 PCC API Key（`jobs:write` + `jobs:read`，列模型还需 `models:read`）及现有模型授权。
+
+```bash
+curl "$PCC_URL/v1/images/generations" -H "Authorization: Bearer $PCC_API_KEY" \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: image-example-001' \
+  -d '{"model":"YOUR_REGISTERED_IMAGE_MODEL","prompt":"A white rabbit on grass","negative_prompt":"watermark","seed":12345,"size":"1024x1024","n":1,"response_format":"b64_json"}'
+```
+
+返回 `{"created": Unix时间秒, "job_id": "...", "data": [{"b64_json": "...", "artifact_id": "...", "sha256": "...", "expires_at": Unix时间秒, "seed": 12345, "negative_prompt": "watermark"}]}`。`response_format` 默认为 `url`，该模式将 b64_json 换为 url；它是需携带同一 PCC 身份授权下载的工件地址，不是公开分享链接或本机文件路径。跨主机调用方可直接使用 b64_json。SHA256 为原始 PNG 字节的摘要。seed / negative_prompt 取实际执行结果；节点未报告则为 null，不伪造确认值。
+
+目前 `n` 只接受 1。支持 size 或成对 width、height，两者同时提供须一致，支持画幅仍受原图片白名单约束；不传使用管理员默认画幅。seed 为 0–2^53−1 的整数，省略或 null 使用服务端/管理员默认值。negative_prompt 省略或 null 保留已批准工作流默认，空串清空绑定，非空文本通过节点已批准的负向提示绑定执行。images 的参考图约束和原异步接口相同；不接受远程 URL，不修改节点工作流权限。
+
+同步文本/图片响应的 `X-PCC-Job-ID` 可用于查询原生任务状态。默认等待文本 120 秒、图片 300 秒，可分别用 `PCC_CHAT_WAIT_SECONDS` / `PCC_IMAGE_WAIT_SECONDS` 配置（1–3600 秒）。等待超时返回 504 并保留任务 ID，**不会取消已经提交的任务**；执行失败/取消/待核对返回 503。SSE 已发响应头后的失败通过错误事件返回。调用端超时也不表示任务停止。重试提交时复用相同 `Idempotency-Key` 与执行参数，避免重复生成；可先通过 `/api/v1/jobs/{job_id}` 查询和下载已有结果。
+
+原 `POST /api/v1/images/generations` 仍返回 202 + Job，不等待推理，也支持成对 width / height。同步接口与异步接口共用提交、授权、参数、资源、隔离、排队、工件校验与幂等逻辑；没有单独的推理服务或模型配置副本。
+
+### 通用接口边界与旧兼容层迁移
+
+PCC 原样传递调用方提供的 messages / prompt；不注入分镜提示词，不将输出解析成 storyboard，不校验业务 JSON Schema。通用文本返回 assistant content，通用图片返回上述 data。Text2Visual 的 `storyboards:plan`、业务标识与 storyboard 契约应由调用方自己的业务适配器实现；原生接口不宣称直接满足这一业务协议，也不宣称支持完整 OpenAI API 功能。
+
+现有部署可仅更新主分支 `pcc-server`，保留数据库、模型参数、用户授权和 Agent 配置。调用端改用原 PCC 地址与 PCC API Key；不再使用 8010 端口或 PCC_ADAPTER_TOKEN。验证原生调用成功后，再停止原先独立的 pcc-text2visual 进程；不要误停 pcc-server。无需为本次接口更新修改 Caddy、证书或安装额外业务依赖。
 
 ## Agent 协议与人工核对
 

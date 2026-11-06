@@ -94,6 +94,7 @@ def create_app(settings=None):
                 }
             },
             status_code=exc.status_code,
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

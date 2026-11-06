@@ -146,13 +146,14 @@ curl "$PCC_URL/api/v1/jobs" \
 
 | 接口                              | 行为                                             |
 | --------------------------------- | ------------------------------------------------ |
-| `GET /api/v1/models`              | 列出当前用户获准使用的模型                       |
+| `GET /v1/models`、`GET /api/v1/models`              | 列出当前用户获准使用的模型                       |
 | `POST /api/v1/jobs`               | 提交批准的异步计算 / AI 任务                     |
 | `GET /api/v1/jobs/{id}`           | 查询状态与结果                                   |
-| `POST /v1/chat/completions`       | 支持 `model`、`messages`、`stream`、`parameters` |
+| `POST /v1/chat/completions`       | 选择模型，传递消息、采样参数，返回通用文本/SSE |
+| `POST /v1/images/generations` | 等待图片完成，返回授权下载 URL 或 Base64 |
 | `POST /api/v1/images/generations` | 输入 `model`、`prompt`、`size`，返回异步 Job     |
 
-网页对话按用户保存在服务器，Enter 发送、Shift + Enter 换行。视觉模型支持内嵌图片及视频采样帧；图像工作流支持参考图编辑。API 的 SSE 在后端完成推理后分块返回；采样选项放在 `parameters` 中，上下文和 KV 等由管理员维护；暂不支持 tools。图像最大画幅为 1536×1024 / 1024×1536；`synthetic.*` 仅供协议测试。详见[模型与会话说明](docs/models-and-conversations.md)。完整权限、字段、取消与恢复说明见 [API 文档](docs/api.md)。
+网页对话按用户保存在服务器，Enter 发送、Shift + Enter 换行。视觉模型支持内嵌图片及视频采样帧；图像工作流支持参考图编辑。API 的 SSE 在后端完成推理后分块返回；采样选项可放在顶层或 `parameters` 中，上下文和 KV 等由管理员维护；暂不支持 tools。图像最大画幅为 1536×1024 / 1024×1536；`synthetic.*` 仅供协议测试。详见[模型与会话说明](docs/models-and-conversations.md)。完整权限、字段、取消与恢复说明见 [API 文档](docs/api.md)。
 
 ## 安全与运行边界
 

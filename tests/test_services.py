@@ -96,7 +96,7 @@ def test_models_and_service_control_remain_separate_from_jobs(env):
             json={
                 "model": "explicit-test",
                 "messages": [{"role": "user", "content": "hi"}],
-                "temperature": 0.7,
+                "tools": [],
             },
         ).status_code
         == 422

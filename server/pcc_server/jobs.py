@@ -914,6 +914,19 @@ def download(
     artifact_id: str, request: Request, user=Depends(current_user), db=Depends(get_db)
 ):
     require_scope(request, "jobs:read")
+    art, data = artifact_data(artifact_id, request, user, db)
+    return Response(
+        data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{art.name}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def artifact_data(artifact_id, request, user, db):
+    require_scope(request, "jobs:read")
     art = db.get(Artifact, artifact_id)
     if not art or art.expires_at <= time.time():
         raise HTTPException(404, "工件不存在或已过期")
@@ -926,14 +939,7 @@ def download(
         raise HTTPException(410, "工件文件已不可用")
     if hashlib.sha256(data).hexdigest() != art.sha256:
         raise HTTPException(409, "工件完整性校验失败")
-    return Response(
-        data,
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{art.name}"',
-            "Cache-Control": "no-store",
-        },
-    )
+    return art, data
 
 
 class Reconcile(Strict):
